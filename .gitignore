@@ -128,3 +128,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/user-config.py
+/.pwd
+/src/core_stable/
+/src/squidge/entry/pywikibot.lwp
+/src/squidge/entry/throttle.ctrl
+/src/squidge/entry/apicache-py3/

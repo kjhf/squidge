@@ -8,22 +8,25 @@ from discord.ext import commands
 from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRequiredArgument, Context
 
 from src.squidge.cogs.bot_util_commands import BotUtilCommands
+from src.squidge.cogs.wiki_commands import WikiCommands
+from src.squidge.entry.consts import COMMAND_SYMBOL
 
 
 class SquidgeBot(Bot):
 
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = False  # We don't need this just yet, but we may do for roles/auth in the future
+        intents.members = True  # Needed to call fetch_members for username & tag recognition (grant/deny)
         intents.presences = False
         intents.typing = False
         super().__init__(
-            command_prefix=None,
+            command_prefix=COMMAND_SYMBOL,
             intents=intents
         )
 
         # Load Cogs
         self.try_add_cog(BotUtilCommands)
+        self.wiki_commands = self.try_add_cog(WikiCommands)
 
     def try_add_cog(self, cog: commands.cog):
         try:
@@ -52,8 +55,11 @@ class SquidgeBot(Bot):
         # else, don't respond to bot messages.
         if message.author.bot:
             if message.author.id.__str__() == "508484047383691264":
-                message_to_send = await self.wiki_notifier_commands.handle_webhook(message)
-                await message.channel.send(message_to_send)
+                # If Inkipedia EN
+                if message.channel.id.__str__() == "508483977523363880":
+                    message_to_send = await self.wiki_commands.handle_inkipedia_event(message)
+                    if message_to_send:
+                        await message.channel.send(message_to_send)
             return
 
         # Process the message in the normal way
@@ -67,9 +73,9 @@ class SquidgeBot(Bot):
         # noinspection PyUnreachableCode
         if __debug__:
             logging.getLogger().setLevel(level="DEBUG")
-            presence = "--=IN DEV=--"
+            presence = "--=IN DEV=-- (use " + COMMAND_SYMBOL + ")"
         else:
-            presence = "in the cloud ⛅"
+            presence = "in the cloud ⛅ (use " + COMMAND_SYMBOL + ")"
 
         if 'pydevd' in sys.modules or 'pdb' in sys.modules or '_pydev_bundle.pydev_log' in sys.modules:
             presence += ' (Debug Attached)'

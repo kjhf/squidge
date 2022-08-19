@@ -4,19 +4,11 @@ Fondly named after squee-g, the cleaning robot, and the sound of cleaning vandal
 ## TODO
 - Connection to Discord
   - ABXY server
-- Connection to MediaWiki software
-  - Inkipedia EN
-- Detect likely spam using wiki logs & report on Discord
-  - Alert admins; potentially delete & block offenders
-- Link permissions between Discord and the target wiki, such that some actions require Discord authentication
-  - We could do this in a variety of ways:
-    - Role assignments
-    - Semi-hardcoded table: data that can be reloaded on the fly
-    - Wiki page of known users
-    - Discord integration of some sort - investigation needed
+- Make connection to MediaWiki software more generic
+  - Inkipedia EN is hardcoded
+  - Inkipedia ES needed
 - Commands on Discord to make mass changes such as:
   - Auto-fix double and broken redirects where possible
-  - Moving categories (and recategorising everything in the old category to the new name), 
   - Moving files (and updating references)
   - Creating a file archive for exporting a category
   - Auto-link to related articles using text that is already on the page, that has not yet been linked
@@ -26,7 +18,20 @@ Fondly named after squee-g, the cleaning robot, and the sound of cleaning vandal
 - Answer knowledge based questions such as "how much does x cost in Splatoon 3"
 - Get stats on active editors esp around wiki staff
 
-## Implementation ideas
+## Completed
+- Link permissions between Discord and the target wiki, such that some actions require Discord authentication
+  - We could do this in a variety of ways:
+    - Role assignments
+    - Semi-hardcoded table: data that can be reloaded on the fly
+    - Wiki page of known users
+    - Discord integration of some sort - investigation needed
+- Commands on Discord to make mass changes such as:
+  - Auto-fix double and broken redirects where possible
+  - Nuke user
+- Detect likely spam using wiki logs & report on Discord
+  - Alerts "patrol" role
+
+### SightEngine Implementation
 
 We can use [SightEngine](https://sightengine.com/text-moderation-api) for text NSFW detection:
 
