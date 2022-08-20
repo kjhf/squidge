@@ -8,7 +8,7 @@ from typing import Optional, Union
 
 import pywikibot.config
 import requests
-from discord import TextChannel, Message, User, Member, Guild
+from discord import TextChannel, Message, User, Member
 
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
@@ -227,7 +227,8 @@ class WikiCommands(commands.Cog):
             content = embed.title or embed.description
             if content:
                 # Scan new pages and new accounts
-                if (":new:", "🆕", ":wave:", "👋", ":outbox_tray:", "📤") in content:
+                emotes_to_check = [":new:", "🆕", ":wave:", "👋", ":outbox_tray:", "📤"]
+                if any(emote in content for emote in emotes_to_check):
                     logging.info(f"handle_inkipedia_event: Checking {content}")
                     files = {
                         'text': (None, content),
@@ -250,14 +251,14 @@ class WikiCommands(commands.Cog):
                                     current_level = "medium"
 
                             if current_level == "low":
-                                return "❓ Possible vandalism. " + await self._get_patrol_pings()
+                                return f"❓ Possible vandalism. {message.jump_url} " + await self._get_patrol_pings()
                             elif current_level == "medium":
-                                return "⚠ Probable vandalism, please check. " + await self._get_patrol_pings()
+                                return f"⚠ Probable vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
                             elif current_level == "high":
-                                return "🚨 Vandalism, please check. " + await self._get_patrol_pings()
+                                return f"🚨 Vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
                             else:
                                 logging.error(f"Sight engine unknown intensity failure {current_level=}: {response.text}")
-                                return "❓ Possible vandalism, please check. " + await self._get_patrol_pings()
+                                return f"❓ Possible vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
                         else:
                             logging.info(f"handle_inkipedia_event: ✔ Checked and determined clean")
 
@@ -290,7 +291,7 @@ class WikiCommands(commands.Cog):
 
         role = args[0]
         if role not in ("owner", "admin", "editor", "patrol"):
-            await ctx.send(f"I don't know this role you're trying to grant is: {role}")
+            await ctx.send(f"I don't know the role you're trying to grant: {role}")
             return
 
         if len(args) > 1:
@@ -359,7 +360,7 @@ class WikiCommands(commands.Cog):
 
         role = args[0]
         if role not in ("owner", "admin", "editor", "patrol"):
-            await ctx.send(f"I don't know this role you're trying to deny is: {role}")
+            await ctx.send(f"I don't know the role you're trying to deny: {role}")
             return
 
         if len(args) > 1:

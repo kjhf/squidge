@@ -4,6 +4,7 @@ import os
 import sys
 
 import discord
+from discord import Guild
 from discord.ext import commands
 from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRequiredArgument, Context
 
@@ -59,7 +60,9 @@ class SquidgeBot(Bot):
                 if message.channel.id.__str__() == "508483977523363880":
                     message_to_send = await self.wiki_commands.handle_inkipedia_event(message)
                     if message_to_send:
-                        await message.channel.send(message_to_send)
+                        # Reply in #bot-spam
+                        bot_spam = message.channel.guild.get_channel(189111240004468736)
+                        await bot_spam.send(message_to_send)
             return
 
         # Process the message in the normal way
