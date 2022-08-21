@@ -134,3 +134,4 @@ dmypy.json
 /src/squidge/entry/pywikibot.lwp
 /src/squidge/entry/throttle.ctrl
 /src/squidge/entry/apicache-py3/
+pwd.txt

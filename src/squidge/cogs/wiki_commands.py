@@ -229,6 +229,10 @@ class WikiCommands(commands.Cog):
                 # Scan new pages and new accounts
                 emotes_to_check = [":new:", "🆕", ":wave:", "👋", ":outbox_tray:", "📤"]
                 if any(emote in content for emote in emotes_to_check):
+                    if "Troublemaker" in content:
+                        # If it's the "Troublemaker" account skip all the checks and ping
+                        return f"🦹 Troublemaker is back. {message.jump_url} " + await self._get_patrol_pings()
+
                     logging.info(f"handle_inkipedia_event: Checking {content}")
                     files = {
                         'text': (None, content),
