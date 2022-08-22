@@ -49,7 +49,7 @@ class WikiCommands(commands.Cog):
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
             channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-            last_message: Optional[Message] = (await channel.history(limit=1).flatten())[0]
+            last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
             if last_message:
                 permissions_json = json.loads(last_message.content)
                 if "owner" in permissions_json and "admin" in permissions_json and "editor" in permissions_json:
