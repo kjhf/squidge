@@ -1,9 +1,12 @@
 import os
+import sys
+
 import dotenv
 import logging
 
 
 def main():
+    sys.path.insert(0, '../../../src')
     dotenv.load_dotenv()
     if not os.getenv("DISCORD_BOT_TOKEN", None):
         assert False, "DISCORD_BOT_TOKEN is not defined, please check the .env file is present and correct."
