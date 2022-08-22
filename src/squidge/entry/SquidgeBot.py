@@ -4,7 +4,6 @@ import os
 import sys
 
 import discord
-from discord import Guild
 from discord.ext import commands
 from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRequiredArgument, Context
 
@@ -16,8 +15,10 @@ from src.squidge.entry.consts import COMMAND_SYMBOL
 class SquidgeBot(Bot):
 
     def __init__(self):
+        self.wiki_commands = None
         intents = discord.Intents.default()
         intents.members = True  # Needed to call fetch_members for username & tag recognition (grant/deny)
+        intents.message_content = True
         intents.presences = False
         intents.typing = False
         super().__init__(
@@ -25,14 +26,10 @@ class SquidgeBot(Bot):
             intents=intents
         )
 
-        # Load Cogs
-        self.try_add_cog(BotUtilCommands)
-        self.wiki_commands = self.try_add_cog(WikiCommands)
-
-    def try_add_cog(self, cog: commands.cog):
+    async def try_add_cog(self, cog: commands.cog):
         try:
             new_cog = cog(self)
-            self.add_cog(new_cog)
+            await self.add_cog(new_cog)
             return new_cog
         except Exception as e:
             logging.error(f"Failed to load {cog=}: {e=}")
@@ -71,6 +68,10 @@ class SquidgeBot(Bot):
         ###
 
     async def on_ready(self):
+        # Load Cogs
+        await self.try_add_cog(BotUtilCommands)
+        self.wiki_commands = await self.try_add_cog(WikiCommands)
+        
         logging.info(f'Logged in as {self.user.name}, id {self.user.id}')
 
         # noinspection PyUnreachableCode
