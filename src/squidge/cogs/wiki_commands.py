@@ -56,7 +56,8 @@ class WikiCommands(commands.Cog):
                     self.permissions["owner"] = permissions_json["owner"]
                     self.permissions["admin"] = permissions_json["admin"]
                     self.permissions["editor"] = permissions_json["editor"]
-                    self.permissions["patrol"] = permissions_json["patrol"]
+                    self.permissions["patrol"] = permissions_json.get("patrol", [])
+                    self.permissions["false-positives"] = permissions_json.get("false-positives", [])
                     author: Optional[User] = last_message.author
                     if author.id != self.bot.user.id:
                         # Repost the message so we can edit.
@@ -247,22 +248,29 @@ class WikiCommands(commands.Cog):
                     if status == "success":
                         profanity_matches = as_json.get("profanity", {}).get("matches")
                         if profanity_matches:
+                            matched_phrases = set()
                             current_level = "low"
                             for match in profanity_matches:
-                                if match["intensity"] == "high":
-                                    current_level = "high"
-                                elif match["intensity"] == "medium" and current_level != "high":
-                                    current_level = "medium"
+                                phrase = match["match"]
+                                if phrase not in self.permissions["false-positives"]:
+                                    matched_phrases.add(phrase)
+                                    if match["intensity"] == "high":
+                                        current_level = "high"
+                                    elif match["intensity"] == "medium" and current_level != "high":
+                                        current_level = "medium"
 
-                            if current_level == "low":
-                                return f"❓ Possible vandalism. {message.jump_url} " + await self._get_patrol_pings()
-                            elif current_level == "medium":
-                                return f"⚠ Probable vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
-                            elif current_level == "high":
-                                return f"🚨 Vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
+                            if matched_phrases:
+                                if current_level == "low":
+                                    return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
+                                elif current_level == "medium":
+                                    return f"⚠ Probable vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
+                                elif current_level == "high":
+                                    return f"🚨 Vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
+                                else:
+                                    logging.error(f"Sight engine unknown intensity failure {current_level=}: {response.text}")
+                                    return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]||. {message.jump_url} " + await self._get_patrol_pings()
                             else:
-                                logging.error(f"Sight engine unknown intensity failure {current_level=}: {response.text}")
-                                return f"❓ Possible vandalism, please check. {message.jump_url} " + await self._get_patrol_pings()
+                                logging.info(f"handle_inkipedia_event: ✔ Checked but had only false positives")
                         else:
                             logging.info(f"handle_inkipedia_event: ✔ Checked and determined clean")
 
@@ -275,6 +283,30 @@ class WikiCommands(commands.Cog):
 
         else:
             logging.warning("No embeds found in Wiki Notifier message!")
+
+    @commands.command(
+        name='false',
+        description="Add a false positive result to the swear filter to allow it next time.",
+        brief="Add a false positive result to the swear filter to allow it next time.",
+        aliases=['false_positive'],
+        help=f'{COMMAND_SYMBOL}false <phrase>',
+        pass_ctx=True)
+    async def false(self, ctx: Context, *, phrase: str):
+        await self.conditional_load_permissions()
+
+        if not self._is_admin(ctx.author):
+            await ctx.send(f'You do not have permission to do this.')
+
+        args = phrase.split(' ')
+
+        if not args:
+            await ctx.send(f'{COMMAND_SYMBOL}false <phrase>')
+            return
+
+        self.permissions["false-positives"].append(phrase)
+        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
+        await channel.send(json.dumps(self.permissions))
+        await ctx.send(f"Added {phrase} to false positives!")
 
     @commands.command(
         name='grant',
