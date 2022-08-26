@@ -48,7 +48,7 @@ class WikiCommands(commands.Cog):
         # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
         # noinspection PyTypeChecker
         self.inkipedia: APISite = Site(code='', fam='splatoon', url="https://splatoonwiki.org")
-        self.__setattr__("_noDeletePrompt", True)  # See ...\pywikibot\page\_pages.py
+        self.__setattr__("_noDeletePrompt", True)  # See ...\pywikibot\page\_pages.py  # TODO: This...... doesn't work :(
 
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
@@ -207,17 +207,18 @@ class WikiCommands(commands.Cog):
                     for contrib in contributions:
                         await asyncio.sleep(1)  # yield
                         page: pywikibot.Page = contrib[0]
-                        page.revisions()  # load revisions
-                        try:
-                            first_revision: Revision = page.oldest_revision
-                            logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
-                            if first_revision.user == user_to_nuke.username:
-                                page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
-                            else:
-                                logging.info(f"Reverting page={page.title()}")
-                                self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
-                        except Exception as error:
-                            logging.error(error)
+                        if page.exists():
+                            page.revisions()  # load revisions
+                            try:
+                                first_revision: Revision = page.oldest_revision
+                                logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
+                                if first_revision.user == user_to_nuke.username:
+                                    page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
+                                else:
+                                    logging.info(f"Reverting page={page.title()}")
+                                    self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
+                            except Exception as error:
+                                logging.error(error)
                     await ctx.send(f"Finished nuking {user}.")
             else:
                 await ctx.send(f"User {user} was not found.")
@@ -225,6 +226,7 @@ class WikiCommands(commands.Cog):
             await ctx.send("You don't have admin permission.")
 
     async def handle_inkipedia_event(self, message: Message) -> Optional[str]:
+        await self.conditional_load_permissions()
         if message.embeds:
             embed = message.embeds[0]
             content = embed.title or embed.description
