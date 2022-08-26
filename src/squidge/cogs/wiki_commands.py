@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from itertools import chain
-from typing import Optional, Union
+from typing import Optional, Union, Dict, List
 
 import pywikibot.config
 import requests
@@ -24,13 +24,6 @@ DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
 
 
-# Monkey-patch the input choice
-from pywikibot.bot import input_choice
-pywikibot.bot.input_choice = lambda: True
-input_choice = lambda: True
-###
-
-
 class WikiCommands(commands.Cog):
     """A grouping of wiki commands."""
 
@@ -39,12 +32,23 @@ class WikiCommands(commands.Cog):
         self.permissions = {}
         pywikibot.config.usernames['splatoon']['*'] = os.getenv("WIKI_USERNAME")
         pywikibot.config.default_edit_summary = DEFAULT_EDIT
-        pywikibot.config.password_file = "../../../.pwd"
+        # Find the password file
+        file = ".pwd"
+        for i in range(0, 10):
+            if os.path.exists(file):
+                pywikibot.config.password_file = file
+                break
+            else:
+                file = "../" + file
+        else:
+            logging.warning("Wiki password file not found. Wiki commands that require login will not work.")
+
         pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
 
         # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
         # noinspection PyTypeChecker
         self.inkipedia: APISite = Site(code='', fam='splatoon', url="https://splatoonwiki.org")
+        self.__setattr__("_noDeletePrompt", True)  # See ...\pywikibot\page\_pages.py
 
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
@@ -192,7 +196,7 @@ class WikiCommands(commands.Cog):
                     await ctx.send("Not nuking this user as they have established rights. If you really meant to do this, demote them first.")
                 else:
                     if user_to_nuke.is_blocked():
-                        await ctx.send("User is already blocked, skipping...")
+                        await ctx.send(f"{user} is already blocked, skipping...")
                     else:
                         user_to_nuke.block(expiry='never',
                                            reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
@@ -203,20 +207,18 @@ class WikiCommands(commands.Cog):
                     for contrib in contributions:
                         await asyncio.sleep(1)  # yield
                         page: pywikibot.Page = contrib[0]
-                        if page.is_filepage():
-                            try:
-                                first_revision: Revision = page.oldest_revision
-                                logging.info(f"{first_revision.user=} == {user_to_nuke=} ? {first_revision.user == user_to_nuke}")
-                                if first_revision.user == user_to_nuke:
-                                    page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
-                                else:
-                                    logging.info(f"Reverting page={page.title()}")
-                                    self.inkipedia.rollbackpage(page, user=user_to_nuke)
-                            except Exception as error:
-                                logging.error(error)
-                        elif page.lastNonBotUser == user_to_nuke.username:
-                            # revert
-                            self.inkipedia.rollbackpage(page, user=user_to_nuke)
+                        page.revisions()  # load revisions
+                        try:
+                            first_revision: Revision = page.oldest_revision
+                            logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
+                            if first_revision.user == user_to_nuke.username:
+                                page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
+                            else:
+                                logging.info(f"Reverting page={page.title()}")
+                                self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
+                        except Exception as error:
+                            logging.error(error)
+                    await ctx.send(f"Finished nuking {user}.")
             else:
                 await ctx.send(f"User {user} was not found.")
         else:
@@ -449,3 +451,79 @@ class WikiCommands(commands.Cog):
                 await ctx.send(f"The {user_id=} already does not have the role {role}.")
         else:
             await ctx.send(f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
+
+#     @commands.command(
+#         name='s3',
+#         description="Splat 3 updates.",
+#         brief="Splat 3 updates.",
+#         help=f'{COMMAND_SYMBOL}s3',
+#         pass_ctx=True)
+#     async def s3(self, ctx: Context):
+#         await self.conditional_load_permissions()
+#         if not self._is_editor(ctx.author):
+#             await ctx.send(f"You don't have permission to do that.")
+#             return
+
+#         # https://github.com/Leanny/leanny.github.io/tree/master/splat3
+#         with open("../../../USen.json", 'r', encoding='utf-8') as f:
+#             language: Dict[str, str] = json.load(f)
+
+#         with open("../../../WeaponInfoMain.json", 'r', encoding='utf-8') as infile:
+#             main_weapons: List[dict] = json.load(infile)
+
+#         for wep in main_weapons:
+#             local_name = wep["__RowId"]
+#             english_name = language.get(local_name)
+#             if not english_name:
+#                 logging.warning("No English name for " + local_name)
+#                 continue
+
+#             english_page = Page(self.inkipedia, english_name)
+#             if not english_page.exists():
+#                 logging.warning("The page for " + english_name + " does not exist.")
+#                 continue
+
+#             ui_params = wep.get("UIParam", [])
+#             ui_params = {obj["Type"]: obj["Value"] for obj in ui_params}
+#             ui_range = ui_params.get("Range")
+#             ui_damage = ui_params.get("Power")
+#             ui_impact = ui_params.get("Explosion")
+#             ui_fire_rate = ui_params.get("Blaze")
+#             ui_charge_speed = ui_params.get("Charge")
+#             ui_ink_speed = ui_params.get("PaintSpeed")
+#             ui_mobility = ui_params.get("Mobility")
+#             ui_durability = ui_params.get("Defence")
+#             ui_handling = ui_params.get("Weight")
+
+#             level = wep.get("ShopUnlockRank")
+#             points = wep.get("SpecialPoint")
+#             sub = wep.get("SubWeapon")
+#             if sub:
+#                 sub = re.match(r"Work/Gyml/(.+)\.spl__WeaponInfoSub.gyml", sub).group(1)
+#                 sub = language.get(sub)
+#             special = wep.get("SpecialWeapon")
+#             if special:
+#                 special = re.match(r"Work/Gyml/(.+)\.spl__WeaponInfoSpecial.gyml", special).group(1)
+#                 special = language.get(special)
+
+#             await ctx.send(f"""<{english_page.full_url()}>\n```
+#             {{{{Infobox/Weapon
+# |game=Splatoon 3
+# |image=S3 Weapon Main {english_name}.png
+# |size=354px
+# |category=Main
+# |class=
+# |sub={sub or "?"}
+# |special={special or "?"}
+# |level={level or "?"}
+# |points={points or "?"}
+# {"|range=" + str(ui_range) if ui_range else ""}
+# {"|damage=" + str(ui_damage) if ui_damage else ""}
+# {"|impact=" + str(ui_impact) if ui_impact else ""}
+# {"|fire_rate=" + str(ui_fire_rate) if ui_fire_rate else ""}
+# {"|charge_speed=" + str(ui_charge_speed) if ui_charge_speed else ""}
+# {"|ink_speed=" + str(ui_ink_speed) if ui_ink_speed else ""}
+# {"|mobility=" + str(ui_mobility) if ui_mobility else ""}
+# {"|durability=" + str(ui_durability) if ui_durability else ""}
+# {"|handling=" + str(ui_handling) if ui_handling else ""}
+# }}}}```""")
