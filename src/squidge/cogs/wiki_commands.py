@@ -1,5 +1,6 @@
 """Wiki commands cog."""
 import asyncio
+import datetime
 import json
 import logging
 import re
@@ -48,7 +49,6 @@ class WikiCommands(commands.Cog):
         # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
         # noinspection PyTypeChecker
         self.inkipedia: APISite = Site(code='', fam='splatoon', url="https://splatoonwiki.org")
-        self.__setattr__("_noDeletePrompt", True)  # See ...\pywikibot\page\_pages.py  # TODO: This...... doesn't work :(
 
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
@@ -180,48 +180,62 @@ class WikiCommands(commands.Cog):
         name='nuke',
         description="Deletes all images uploaded by a user. Reverts all edits made. Blocks.",
         brief="Nuke a user and block them.",
-        aliases=['fart'],
+        aliases=['revert'],
         help=f'{COMMAND_SYMBOL}nuke <user>',
         pass_ctx=True)
     async def nuke(self, ctx: Context, *, user: str):
         await self.conditional_load_permissions()
+
+        # Get the user to nuke
+        user_to_nuke = pywikibot.User(self.inkipedia, user)
+
+        if not user_to_nuke or not user_to_nuke.isRegistered(force=True):
+            await ctx.send(f"User {user} was not found.")
+            return
+
+        # Sanity check for an established user (> 2 as registered users have '*' and 'user')
+        rights = user_to_nuke.groups()
+        logging.info(f"Groups returned: {rights}")
+        if len(rights) > 2:
+            await ctx.send(
+                "Not nuking this user as they have established rights. If you really meant to do this, demote them first.")
+            return
+
         if self._is_admin(ctx.author):
             # Block the user
-            user_to_nuke = pywikibot.User(self.inkipedia, user)
-            if user_to_nuke and user_to_nuke.isRegistered(force=True):
-                # Sanity check for an established user (> 2 as registered users have '*' and 'user')
-                rights = user_to_nuke.groups()
-                logging.info(f"Groups returned: {rights}")
-                if len(rights) > 2:
-                    await ctx.send("Not nuking this user as they have established rights. If you really meant to do this, demote them first.")
-                else:
-                    if user_to_nuke.is_blocked():
-                        await ctx.send(f"{user} is already blocked, skipping...")
-                    else:
-                        user_to_nuke.block(expiry='never',
-                                           reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
-                                           )
-
-                    # Get all contributions from the user
-                    contributions = user_to_nuke.contributions()
-                    for contrib in contributions:
-                        await asyncio.sleep(1)  # yield
-                        page: pywikibot.Page = contrib[0]
-                        if page.exists():
-                            page.revisions()  # load revisions
-                            try:
-                                first_revision: Revision = page.oldest_revision
-                                logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
-                                if first_revision.user == user_to_nuke.username:
-                                    page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
-                                else:
-                                    logging.info(f"Reverting page={page.title()}")
-                                    self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
-                            except Exception as error:
-                                logging.error(error)
-                    await ctx.send(f"Finished nuking {user}.")
+            if user_to_nuke.is_blocked():
+                await ctx.send(f"{user} is already blocked, skipping...")
             else:
-                await ctx.send(f"User {user} was not found.")
+                user_to_nuke.block(expiry='never',
+                                   reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
+                                   )
+
+            # Get all contributions from the user
+            contributions = user_to_nuke.contributions()
+            for contrib in contributions:
+                await asyncio.sleep(1)  # yield
+                page: pywikibot.Page = contrib[0]
+                if page.exists():
+                    page.revisions()  # load revisions
+                    try:
+                        first_revision: Revision = page.oldest_revision
+                        logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
+                        if first_revision.user == user_to_nuke.username:
+                            page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]", prompt=False)
+                        else:
+                            logging.info(f"Reverting page={page.title()}")
+                            self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
+                    except Exception as error:
+                        logging.error(error)
+            await ctx.send(f"Finished nuking {user}.")
+        elif self._is_editor(ctx.author):
+            # Maybe we could allow this,
+            # we've checked established user already
+            # we can check age of account: - the target user account is less than a day-old
+            # timestamp: pywikibot.Timestamp = user_to_nuke.first_edit[2]
+            # maybe we can check the vandalism trip too?
+
+            await ctx.send("You don't have admin permission.")
         else:
             await ctx.send("You don't have admin permission.")
 
