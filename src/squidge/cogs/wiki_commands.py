@@ -49,6 +49,7 @@ class WikiCommands(commands.Cog):
         # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
         # noinspection PyTypeChecker
         self.inkipedia: APISite = Site(code='', fam='splatoon', url="https://splatoonwiki.org")
+        self.recent_vandals = set()
 
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
@@ -202,40 +203,22 @@ class WikiCommands(commands.Cog):
             return
 
         if self._is_admin(ctx.author):
-            # Block the user
-            if user_to_nuke.is_blocked():
-                await ctx.send(f"{user} is already blocked, skipping...")
-            else:
-                user_to_nuke.block(expiry='never',
-                                   reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
-                                   )
-
-            # Get all contributions from the user
-            contributions = user_to_nuke.contributions()
-            for contrib in contributions:
-                await asyncio.sleep(1)  # yield
-                page: pywikibot.Page = contrib[0]
-                if page.exists():
-                    page.revisions()  # load revisions
-                    try:
-                        first_revision: Revision = page.oldest_revision
-                        logging.info(f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
-                        if first_revision.user == user_to_nuke.username:
-                            page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]", prompt=False)
-                        else:
-                            logging.info(f"Reverting page={page.title()}")
-                            self.inkipedia.rollbackpage(page, user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
-                    except Exception as error:
-                        logging.error(error)
-            await ctx.send(f"Finished nuking {user}.")
+            self._nuke(ctx, user_to_nuke)
         elif self._is_editor(ctx.author):
-            # Maybe we could allow this,
-            # we've checked established user already
-            # we can check age of account: - the target user account is less than a day-old
-            # timestamp: pywikibot.Timestamp = user_to_nuke.first_edit[2]
-            # maybe we can check the vandalism trip too?
+            # Maybe we could allow this
+            # We have already checked the user's autoconfirmed status.
 
-            await ctx.send("You don't have admin permission.")
+            first_edit_ts: pywikibot.Timestamp = user_to_nuke.first_edit[2]
+            one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
+            if first_edit_ts < one_day_ago:  # If the first edit was older than a day ago
+                await ctx.send(f"You don't have admin permission for this: {user_to_nuke.username}'s first contribution is more than a day old.")
+                return
+
+            if user_to_nuke.username not in self.recent_vandals:
+                await ctx.send(f"You don't have admin permission for this: {user_to_nuke.username}'s has not tripped the anti-vandalism detection.")
+                return
+
+            self._nuke(ctx, user_to_nuke)
         else:
             await ctx.send("You don't have admin permission.")
 
@@ -248,8 +231,22 @@ class WikiCommands(commands.Cog):
                 # Scan new pages and new accounts
                 emotes_to_check = [":new:", "🆕", ":wave:", "👋", ":outbox_tray:", "📤"]
                 if any(emote in content for emote in emotes_to_check):
-                    if "Troublemaker" in content:
+                    source_user = re.search(r"\[([^\]]+)]", content)
+                    if source_user:
+                        source_user = source_user.group(1)
+                    else:
+                        logging.warning(f"handle_inkipedia_event: There were no [] in the message and so a source user was not found.")
+                        return
+
+                    # As insurance, also check that the source user indeed appears as a link, to make sure
+                    # we haven't tripped over any funny symbols in the user's name
+                    if "User:" + source_user not in content:
+                        logging.error(f"handle_inkipedia_event: Determined the source user to be {source_user} but User:{source_user} is not in the content.")
+                        return
+
+                    if source_user.lower().startswith("troublemaker"):
                         # If it's the "Troublemaker" account skip all the checks and ping
+                        self.recent_vandals.add(source_user)
                         return f"🦹 Troublemaker is back. {message.jump_url} " + await self._get_patrol_pings()
 
                     logging.info(f"handle_inkipedia_event: Checking {content}")
@@ -278,6 +275,7 @@ class WikiCommands(commands.Cog):
                                         current_level = "medium"
 
                             if matched_phrases:
+                                self.recent_vandals.add(source_user)
                                 if current_level == "low":
                                     return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
                                 elif current_level == "medium":
@@ -467,6 +465,38 @@ class WikiCommands(commands.Cog):
                 await ctx.send(f"The {user_id=} already does not have the role {role}.")
         else:
             await ctx.send(f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
+
+    def _nuke(self, ctx, user_to_nuke: pywikibot.User):
+        # Block the user
+        if user_to_nuke.is_blocked():
+            await ctx.send(f"{user_to_nuke.username} is already blocked, skipping block step.")
+        else:
+            user_to_nuke.block(expiry='never',
+                               reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
+                               )
+
+        # Get all contributions from the user
+        contributions = user_to_nuke.contributions()
+        for contrib in contributions:
+            await asyncio.sleep(1)  # yield
+            page: pywikibot.Page = contrib[0]
+            if page.exists():
+                page.revisions()  # load revisions
+                try:
+                    first_revision: Revision = page.oldest_revision
+                    logging.info(
+                        f"{first_revision.user=} == {user_to_nuke.username=} ? {first_revision.user == user_to_nuke.username}")
+                    if first_revision.user == user_to_nuke.username:
+                        page.delete(
+                            reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]",
+                            prompt=False)
+                    else:
+                        logging.info(f"Reverting page={page.title()}")
+                        self.inkipedia.rollbackpage(page,
+                                                    user=user_to_nuke)  # This will fail on the API if the last user is not the user to nuke
+                except Exception as error:
+                    logging.error(error)
+        await ctx.send(f"Finished nuking {user_to_nuke.username}.")
 
 #     @commands.command(
 #         name='s3',
