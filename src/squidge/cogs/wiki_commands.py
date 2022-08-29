@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from itertools import chain
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union
 
 import pywikibot.config
 import requests
@@ -203,7 +203,7 @@ class WikiCommands(commands.Cog):
             return
 
         if self._is_admin(ctx.author):
-            self._nuke(ctx, user_to_nuke)
+            await self._nuke(ctx, user_to_nuke)
         elif self._is_editor(ctx.author):
             # Maybe we could allow this
             # We have already checked the user's autoconfirmed status.
@@ -218,7 +218,7 @@ class WikiCommands(commands.Cog):
                 await ctx.send(f"You don't have admin permission for this: {user_to_nuke.username}'s has not tripped the anti-vandalism detection.")
                 return
 
-            self._nuke(ctx, user_to_nuke)
+            await self._nuke(ctx, user_to_nuke)
         else:
             await ctx.send("You don't have admin permission.")
 
@@ -466,7 +466,7 @@ class WikiCommands(commands.Cog):
         else:
             await ctx.send(f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
 
-    def _nuke(self, ctx, user_to_nuke: pywikibot.User):
+    async def _nuke(self, ctx, user_to_nuke: pywikibot.User):
         # Block the user
         if user_to_nuke.is_blocked():
             await ctx.send(f"{user_to_nuke.username} is already blocked, skipping block step.")
@@ -497,79 +497,3 @@ class WikiCommands(commands.Cog):
                 except Exception as error:
                     logging.error(error)
         await ctx.send(f"Finished nuking {user_to_nuke.username}.")
-
-#     @commands.command(
-#         name='s3',
-#         description="Splat 3 updates.",
-#         brief="Splat 3 updates.",
-#         help=f'{COMMAND_SYMBOL}s3',
-#         pass_ctx=True)
-#     async def s3(self, ctx: Context):
-#         await self.conditional_load_permissions()
-#         if not self._is_editor(ctx.author):
-#             await ctx.send(f"You don't have permission to do that.")
-#             return
-
-#         # https://github.com/Leanny/leanny.github.io/tree/master/splat3
-#         with open("../../../USen.json", 'r', encoding='utf-8') as f:
-#             language: Dict[str, str] = json.load(f)
-
-#         with open("../../../WeaponInfoMain.json", 'r', encoding='utf-8') as infile:
-#             main_weapons: List[dict] = json.load(infile)
-
-#         for wep in main_weapons:
-#             local_name = wep["__RowId"]
-#             english_name = language.get(local_name)
-#             if not english_name:
-#                 logging.warning("No English name for " + local_name)
-#                 continue
-
-#             english_page = Page(self.inkipedia, english_name)
-#             if not english_page.exists():
-#                 logging.warning("The page for " + english_name + " does not exist.")
-#                 continue
-
-#             ui_params = wep.get("UIParam", [])
-#             ui_params = {obj["Type"]: obj["Value"] for obj in ui_params}
-#             ui_range = ui_params.get("Range")
-#             ui_damage = ui_params.get("Power")
-#             ui_impact = ui_params.get("Explosion")
-#             ui_fire_rate = ui_params.get("Blaze")
-#             ui_charge_speed = ui_params.get("Charge")
-#             ui_ink_speed = ui_params.get("PaintSpeed")
-#             ui_mobility = ui_params.get("Mobility")
-#             ui_durability = ui_params.get("Defence")
-#             ui_handling = ui_params.get("Weight")
-
-#             level = wep.get("ShopUnlockRank")
-#             points = wep.get("SpecialPoint")
-#             sub = wep.get("SubWeapon")
-#             if sub:
-#                 sub = re.match(r"Work/Gyml/(.+)\.spl__WeaponInfoSub.gyml", sub).group(1)
-#                 sub = language.get(sub)
-#             special = wep.get("SpecialWeapon")
-#             if special:
-#                 special = re.match(r"Work/Gyml/(.+)\.spl__WeaponInfoSpecial.gyml", special).group(1)
-#                 special = language.get(special)
-
-#             await ctx.send(f"""<{english_page.full_url()}>\n```
-#             {{{{Infobox/Weapon
-# |game=Splatoon 3
-# |image=S3 Weapon Main {english_name}.png
-# |size=354px
-# |category=Main
-# |class=
-# |sub={sub or "?"}
-# |special={special or "?"}
-# |level={level or "?"}
-# |points={points or "?"}
-# {"|range=" + str(ui_range) if ui_range else ""}
-# {"|damage=" + str(ui_damage) if ui_damage else ""}
-# {"|impact=" + str(ui_impact) if ui_impact else ""}
-# {"|fire_rate=" + str(ui_fire_rate) if ui_fire_rate else ""}
-# {"|charge_speed=" + str(ui_charge_speed) if ui_charge_speed else ""}
-# {"|ink_speed=" + str(ui_ink_speed) if ui_ink_speed else ""}
-# {"|mobility=" + str(ui_mobility) if ui_mobility else ""}
-# {"|durability=" + str(ui_durability) if ui_durability else ""}
-# {"|handling=" + str(ui_handling) if ui_handling else ""}
-# }}}}```""")
