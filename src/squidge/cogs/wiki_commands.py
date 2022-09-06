@@ -132,8 +132,8 @@ class WikiCommands(commands.Cog):
 
     @commands.command(
         name='move_category',
-        description="Moves a category an updates all references.",
-        brief="Moves a category an updates all references.",
+        description="Moves a category and updates all references.",
+        brief="Moves a category and updates all references.",
         aliases=['recat'],
         help=f'{COMMAND_SYMBOL}move_category <old> <new>',
         pass_ctx=True)
@@ -176,6 +176,42 @@ class WikiCommands(commands.Cog):
             await ctx.send(f"Done, {count} page(s) changed.")
         else:
             await ctx.send("You don't have editor permission.")
+
+    @commands.command(
+        name='delete_category',
+        description="Deletes a category and removes its references.",
+        brief="Deletes a category and removes its references.",
+        aliases=['delcat'],
+        help=f'{COMMAND_SYMBOL}delete_category <cat>',
+        pass_ctx=True)
+    async def delete_category(self, ctx: Context, *, category_title: str):
+        await self.conditional_load_permissions()
+        if self._is_admin(ctx.author):
+            if not category_title.lower().startswith("category"):
+                category_title = "Category:" + category_title
+
+            category_title = category_title.replace('_', ' ')
+            summary = "Removing `" + category_title + "`"
+            await ctx.send(summary)
+            cat_page = pywikibot.Category(self.inkipedia, category_title)
+            if not Page(self.inkipedia, category_title).exists():
+                await ctx.send(f"Warning: the category does not exist.")
+            else:
+                cat_page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary, prompt=False, deletetalk=True)
+
+            pages = chain(cat_page.articles(), cat_page.subcategories(recurse=True))
+            count = 0
+
+            for page in pages:
+                changed = page.change_category(cat_page, None, summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
+                await asyncio.sleep(1)  # yield
+                if changed:
+                    count += 1
+                else:
+                    logging.info(f"Cats: {[c.__str__() for c in page.categories()]}")
+            await ctx.send(f"Done, {count} page(s) changed.")
+        else:
+            await ctx.send("You don't have admin permission.")
 
     @commands.command(
         name='nuke',
