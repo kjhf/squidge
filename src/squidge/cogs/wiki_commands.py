@@ -62,7 +62,8 @@ class WikiCommands(commands.Cog):
                     self.permissions["admin"] = permissions_json["admin"]
                     self.permissions["editor"] = permissions_json["editor"]
                     self.permissions["patrol"] = permissions_json.get("patrol", [])
-                    self.permissions["false-positives"] = permissions_json.get("false-positives", [])
+                    self.permissions["whitelist"] = permissions_json.get("whitelist", [])  # Words that are picked up but shouldn't be, e.g. 'dink'
+                    self.permissions["false-triggers"] = permissions_json.get("false-triggers", [])  # Words that trigger a false detection of another word, e.g. 'button'
                     author: Optional[User] = last_message.author
                     if author.id != self.bot.user.id:
                         # Repost the message so we can edit.
@@ -280,12 +281,17 @@ class WikiCommands(commands.Cog):
                         logging.error(f"handle_inkipedia_event: Determined the source user to be {source_user} but User:{source_user} is not in the content.")
                         return
 
-                    if source_user.lower().startswith("troublemaker"):
-                        # If it's the "Troublemaker" account skip all the checks and ping
-                        self.recent_vandals.add(source_user)
-                        return f"🦹 Troublemaker is back. {message.jump_url} " + await self._get_patrol_pings()
+                    logging.debug(f"handle_inkipedia_event: Checking {content}")
 
-                    logging.info(f"handle_inkipedia_event: Checking {content}")
+                    # Remove square brackets as they are primarily links, and also fool some detection (e.g. [ is a c)
+                    content = content.replace("[", "").replace("]", "")
+
+                    # In each false trigger, if it's a whole word, remove it
+                    # (?:\s|\b) is there to clean up the double space if not at the end of the string
+                    for word in self.permissions["false-triggers"]:
+                        content = re.sub(r"\b(" + word + r")(?:\s|\b)", "", content, flags=re.I)
+
+                    logging.info(f"handle_inkipedia_event: Querying {content}")
                     files = {
                         'text': (None, content),
                         'lang': (None, 'en'),
@@ -303,7 +309,7 @@ class WikiCommands(commands.Cog):
                             current_level = "low"
                             for match in profanity_matches:
                                 phrase = match["match"]
-                                if phrase not in self.permissions["false-positives"]:
+                                if phrase not in self.permissions["whitelist"]:
                                     matched_phrases.add(phrase)
                                     if match["intensity"] == "high":
                                         current_level = "high"
@@ -322,7 +328,7 @@ class WikiCommands(commands.Cog):
                                     logging.error(f"Sight engine unknown intensity failure {current_level=}: {response.text}")
                                     return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]||. {message.jump_url} " + await self._get_patrol_pings()
                             else:
-                                logging.info(f"handle_inkipedia_event: ✔ Checked but had only false positives")
+                                logging.info(f"handle_inkipedia_event: ✔ Checked but had only whitelisted phrases")
                         else:
                             logging.info(f"handle_inkipedia_event: ✔ Checked and determined clean")
 
@@ -338,9 +344,9 @@ class WikiCommands(commands.Cog):
 
     @commands.command(
         name='false',
-        description="Add a false positive result to the swear filter to allow it next time.",
-        brief="Add a false positive result to the swear filter to allow it next time.",
-        aliases=['false_positive'],
+        description="Add a false trigger to the filter. These are word(s) that trigger false detection of another word, e.g. 'button'",
+        brief="Add a false trigger to the swear filter to allow it.",
+        aliases=['false_triggers'],
         help=f'{COMMAND_SYMBOL}false <phrase>',
         pass_ctx=True)
     async def false(self, ctx: Context, *, phrase: str):
@@ -355,10 +361,34 @@ class WikiCommands(commands.Cog):
             await ctx.send(f'{COMMAND_SYMBOL}false <phrase>')
             return
 
-        self.permissions["false-positives"].append(phrase)
+        self.permissions["false-triggers"].append(phrase)
         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
         await channel.send(json.dumps(self.permissions))
-        await ctx.send(f"Added {phrase} to false positives!")
+        await ctx.send(f"Added {phrase} to false triggers!")
+
+    @commands.command(
+        name='whitelist',
+        description="Add a detected swear to the whitelist. These are words that trigger detection but are okay, e.g. 'stringer'",
+        brief="Add a detected swear to the swear filter to allow it.",
+        aliases=['false-whitelist'],
+        help=f'{COMMAND_SYMBOL}whitelist <word>',
+        pass_ctx=True)
+    async def whitelist(self, ctx: Context, *, word: str):
+        await self.conditional_load_permissions()
+
+        if not self._is_admin(ctx.author):
+            await ctx.send(f'You do not have permission to do this.')
+
+        args = word.split(' ')
+
+        if not args:
+            await ctx.send(f'{COMMAND_SYMBOL}whitelist <word>')
+            return
+
+        self.permissions["whitelist"].append(word)
+        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
+        await channel.send(json.dumps(self.permissions))
+        await ctx.send(f"Added {word} to whitelist!")
 
     @commands.command(
         name='grant',
