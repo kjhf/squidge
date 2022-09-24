@@ -16,6 +16,7 @@ from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
 from pywikibot import Site, Page, APISite  # APISite used for type hinting
 from pywikibot.page import Revision
+from pywikibot.site._namespace import BuiltinNamespace
 
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
@@ -23,6 +24,7 @@ import os
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
+REDIRECT_TEXT = "#REDIRECT [["
 
 
 class WikiCommands(commands.Cog):
@@ -563,3 +565,96 @@ class WikiCommands(commands.Cog):
                 except Exception as error:
                     logging.error(error)
         await ctx.send(f"Finished nuking {user_to_nuke.username}.")
+
+    @commands.command(
+        name='auto_delete',
+        description="Deletes orphaned talk pages and broken redirects in the specified category, defaulting to Pages pending deletion.",
+        brief="Deletes orphaned talk pages and broken redirects in the specified category, defaulting to Pages pending deletion",
+        aliases=['autodel', 'delorphantalk', 'delorphantalks, delete_orphan_talks'],
+        help=f'{COMMAND_SYMBOL}autodel [cat=Pages pending deletion]',
+        pass_ctx=True)
+    async def auto_delete(self, ctx: Context, *, category_title: str = "Pages pending deletion"):
+        await self.conditional_load_permissions()
+        if self._is_admin(ctx.author):
+            if not category_title.lower().startswith("category"):
+                category_title = "Category:" + category_title
+
+            category_title = category_title.replace('_', ' ')
+            orphaned_summary = "Deleting orphaned talk page in [[:" + category_title + "]]"
+            broken_redirect_summary = "Deleting broken redirect page in [[:" + category_title + "]]"
+            unused_redirect_summary = "Deleting unused or superseded redirect page in [[:" + category_title + "]]"
+            await ctx.send(f"Auto-deleting from {category_title}")
+            cat_page = pywikibot.Category(self.inkipedia, category_title)
+            if not Page(self.inkipedia, category_title).exists():
+                await ctx.send(f"Error: the category does not exist.")
+                return
+
+            pages = chain(cat_page.articles(), cat_page.subcategories(recurse=True))
+            count = 0
+
+            for page in pages:
+                if page.isTalkPage():
+                    content_page = page.toggleTalkPage()
+                    if content_page is None or not content_page.exists() or content_page.isRedirectPage():
+                        # Delete the orphan
+                        deleted = page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + orphaned_summary, prompt=False)
+                        await asyncio.sleep(1)  # yield
+                        if deleted == 1:
+                            count += 1
+                        else:
+                            logging.warning(f"Did not delete {page}.")
+                        continue
+                # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
+
+                if page.isRedirectPage() or REDIRECT_TEXT in page.text[:1024]:
+                    if page.isRedirectPage():
+                        target_page = page.getRedirectTarget()
+                    else:
+                        start_index = page.text.index(REDIRECT_TEXT) + len(REDIRECT_TEXT)
+                        target_page_title = page.text[start_index: page.text.index("]]", start_index)].lstrip(': ')
+                        target_page = Page(self.inkipedia, target_page_title)
+
+                    if target_page is None or not target_page.exists():
+                        # Delete the broken redirect
+                        deleted = page.delete(
+                            reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + broken_redirect_summary + " was " + (target_page.title() if target_page else "non-existent page"),
+                            prompt=False)
+                        await asyncio.sleep(1)  # yield
+                        if deleted == 1:
+                            count += 1
+                        else:
+                            logging.warning(f"Did not delete {page}.")
+                    elif target_page.isRedirectPage():
+                        # Double redirect
+                        target_target_page = target_page.getRedirectTarget()
+                        if target_target_page == page:
+                            # Circular reference
+                            deleted = page.delete(
+                                reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + broken_redirect_summary + " was " + (
+                                    target_page.title() if target_page else "non-existent page"),
+                                prompt=False)
+                            await asyncio.sleep(1)  # yield
+                            if deleted == 1:
+                                count += 1
+                            else:
+                                logging.warning(f"Did not delete {page}.")
+                        else:
+                            # Fix the redirect instead
+                            page.set_redirect_target(target_target_page, summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " fixing double redirect to " + target_target_page.title(as_link=True))
+                    else:
+                        # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
+                        if any(page.backlinks(total=2)):
+                            logging.warning(f"Did not delete {page} because it is in use.")
+                        else:
+                            deleted = page.delete(
+                                reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + unused_redirect_summary + " was " + (
+                                    target_page.title() if target_page else "non-existent page"),
+                                prompt=False)
+                            await asyncio.sleep(1)  # yield
+                            if deleted == 1:
+                                count += 1
+                            else:
+                                logging.warning(f"Did not delete {page}.")
+            await ctx.send(f"Done, {count} page(s) deleted.")
+        else:
+            await ctx.send("You don't have admin permission.")
