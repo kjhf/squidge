@@ -280,8 +280,9 @@ class WikiCommands(commands.Cog):
 
                     # As insurance, also check that the source user indeed appears as a link, to make sure
                     # we haven't tripped over any funny symbols in the user's name
-                    if "User:" + source_user not in content:
-                        logging.error(f"handle_inkipedia_event: Determined the source user to be {source_user} but User:{source_user} is not in the content.")
+                    source_user_as_page = Page(self.inkipedia, source_user, BuiltinNamespace.USER)
+                    if source_user_as_page.title(underscore=True) not in content:
+                        logging.error(f"handle_inkipedia_event: Determined the source user to be {source_user} but {source_user_as_page} is not in the content.")
                         return
 
                     logging.debug(f"handle_inkipedia_event: Checking {content}")
