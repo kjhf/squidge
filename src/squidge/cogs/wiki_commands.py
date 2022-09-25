@@ -81,6 +81,7 @@ class WikiCommands(commands.Cog):
                 raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no permissions. Cannot infer owner.")
 
     def are_permissions_loaded(self):
+        self.inkipedia.login()  # Do a login here if not already
         return len(self.permissions)
 
     def _is_editor(self, id: Union[User, Member, str, int]):
