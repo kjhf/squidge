@@ -367,7 +367,8 @@ from pywikibot.exceptions import (
     SpamblacklistError,
     UnknownSiteError,
 )
-from pywikibot.tools import first_upper, SizedKeyCollection
+from pywikibot.tools import first_upper
+from pywikibot.tools.collections import SizedKeyCollection
 
 docuReplacements = {
     '&params;': pagegenerators.parameterHelp
