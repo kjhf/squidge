@@ -18,7 +18,7 @@ from pywikibot import Site, Page, pagegenerators  # APISite used for type hintin
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
-from src.core_stable.scripts.interwiki import InterwikiDumps, InterwikiBot, InterwikiBotConfig
+from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
