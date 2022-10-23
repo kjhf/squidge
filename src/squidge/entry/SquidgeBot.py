@@ -52,13 +52,14 @@ class SquidgeBot(Bot):
         # If it's the WikiNotifier bot, do stuff.
         # else, don't respond to bot messages.
         if message.author.bot:
-            if message.author.id.__str__() == "508484047383691264":
-                # If Inkipedia EN
-                if message.channel.id.__str__() == "508483977523363880":
+            # If WikiNotifier
+            if message.author.id.__str__() == "1027464071362121728":
+                # If #recent-changes channel in Inkipedia
+                if message.channel.id.__str__() == "1020516169146454037":
                     message_to_send = await self.wiki_commands.handle_inkipedia_event(message)
                     if message_to_send:
-                        # Reply in #bot-spam
-                        bot_spam = message.channel.guild.get_channel(189111240004468736)
+                        # Reply in #squidge-alerts
+                        bot_spam = message.channel.guild.get_channel(1033866281549582376)
                         await bot_spam.send(message_to_send)
             return
 

@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import re
 from itertools import chain
 from typing import Optional, Union
@@ -10,17 +11,15 @@ from typing import Optional, Union
 import pywikibot.config
 import requests
 from discord import TextChannel, Message, User, Member
-
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
-from pywikibot import Site, Page, APISite  # APISite used for type hinting
+from pywikibot import Site, Page, pagegenerators  # APISite used for type hinting
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
+from src.core_stable.scripts.interwiki import InterwikiDumps, InterwikiBot, InterwikiBotConfig
 from src.squidge.entry.consts import COMMAND_SYMBOL
-
-import os
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
@@ -33,9 +32,12 @@ class WikiCommands(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot = bot
         self.permissions = {}
-        pywikibot.config.usernames['splatoon']['*'] = os.getenv("WIKI_USERNAME")
+        pywikibot.config.usernames['splatoonwiki']['*'] = os.getenv("WIKI_USERNAME")
         pywikibot.config.default_edit_summary = DEFAULT_EDIT
-        # Find the password file
+        pywikibot.config.family = 'splatoonwiki'
+        pywikibot.config.mylang = 'en'
+
+        # Find the password file and family file
         file = ".pwd"
         for i in range(0, 10):
             if os.path.exists(file):
@@ -46,11 +48,23 @@ class WikiCommands(commands.Cog):
         else:
             logging.warning("Wiki password file not found. Wiki commands that require login will not work.")
 
-        pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
+        file = "src/squidge/pwbsupport/splatoonwiki_family.py"
+        for i in range(0, 10):
+            if os.path.exists(file):
+                pywikibot.config.family_files['splatoonwiki'] = file
+                # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
+                # noinspection PyTypeChecker
+                self.inkipedia = Site(code='en', fam='splatoonwiki')
+                break
+            else:
+                file = "../" + file
+        else:
+            logging.warning("Family file not found. Interwiki commands will not work.")
+            # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
+            # noinspection PyTypeChecker
+            self.inkipedia = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
 
-        # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
-        # noinspection PyTypeChecker
-        self.inkipedia: APISite = Site(code='', fam='splatoon', url="https://splatoonwiki.org")
+        pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
         self.recent_vandals = set()
 
     async def conditional_load_permissions(self):
@@ -658,5 +672,84 @@ class WikiCommands(commands.Cog):
                             else:
                                 logging.warning(f"Did not delete {page}.")
             await ctx.send(f"Done, {count} page(s) deleted.")
+        else:
+            await ctx.send("You don't have admin permission.")
+
+    @commands.command(
+        name='remove_construction',
+        description="Go through pages under construction and remove those above a certain size",
+        brief="Go through pages under construction and remove those above a certain size",
+        aliases=['remconstruction'],
+        help=f'{COMMAND_SYMBOL}remove_construction',
+        pass_ctx=True)
+    async def remove_construction(self, ctx: Context, *, category_title: str = "Articles under construction"):
+        construction_re = re.compile(re.escape('{{construction}}'), re.IGNORECASE)
+        size_threshold = 4000
+
+        await self.conditional_load_permissions()
+        if self._is_editor(ctx.author):
+
+            if not category_title.lower().startswith("category"):
+                category_title = "Category:" + category_title
+
+            category_title = category_title.replace('_', ' ')
+            summary = f"Removing construction notice from articles larger than {size_threshold} bytes"
+            await ctx.send(summary)
+            cat_page = pywikibot.Category(self.inkipedia, category_title)
+            if not Page(self.inkipedia, category_title).exists():
+                await ctx.send(f"Error: the category does not exist.")
+                return
+
+            pages = chain(cat_page.articles(), cat_page.subcategories(recurse=True))
+            count = 0
+
+            for page in pages:
+                if page.latest_revision.size >= size_threshold:
+                    page.text = construction_re.sub('', page.text)
+                    page.save(
+                        summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary,
+                        prompt=False)
+                    count += 1
+                    await asyncio.sleep(1)  # yield
+
+            await ctx.send(f"Done, {count} page(s) changed.")
+        else:
+            await ctx.send("You don't have admin permission.")
+
+    @commands.command(
+        name='interwiki',
+        description="Run interwiki sync command",
+        brief="Run interwiki sync command",
+        help=f'{COMMAND_SYMBOL}interwiki',
+        pass_ctx=True)
+    async def perform_interwiki(self, ctx: Context):
+        await self.conditional_load_permissions()
+        if self._is_editor(ctx.author):
+            interwiki_conf = InterwikiBotConfig()
+            interwiki_conf.readOptions("-autonomous")
+
+            # Do not use additional summary with autonomous mode
+            interwiki_conf.summary = EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " interwiki update"
+            site = self.inkipedia
+
+            # ensure that we don't try to change main page
+            main_page_name = site.siteinfo['mainpage']
+            interwiki_conf.skip.add(pywikibot.Page(site, main_page_name))
+            dump = InterwikiDumps(site=site, do_continue=False, restore_all=interwiki_conf.restore_all)
+            bot = InterwikiBot(interwiki_conf)
+            bot.site = site
+            bot.setPageGenerator(iter(pagegenerators.AllpagesPageGenerator(includeredirects=False, site=site)))
+
+            try:
+                bot.run()
+            except KeyboardInterrupt:
+                dump.write_dump(bot.dump_titles, True)
+            except Exception:  # pragma: no cover
+                pywikibot.exception()
+                dump.write_dump(bot.dump_titles, True)
+            else:
+                pywikibot.output('Script terminated successfully.')
+            finally:
+                dump.delete_dumps()
         else:
             await ctx.send("You don't have admin permission.")
