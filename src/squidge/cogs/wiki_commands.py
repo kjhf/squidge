@@ -10,14 +10,15 @@ from typing import Optional, Union
 
 import pywikibot.config
 import requests
-from discord import TextChannel, Message, User, Member
+from discord import TextChannel, Message, User, Member, Interaction
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
 from pywikibot import Site, Page, pagegenerators  # APISite used for type hinting
 from pywikibot.page import Revision
-from pywikibot.site._namespace import BuiltinNamespace
+from pywikibot.site._namespace import BuiltinNamespace, Namespace
 
+from src.core_stable.scripts.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
@@ -741,7 +742,8 @@ class WikiCommands(commands.Cog):
             bot.setPageGenerator(iter(pagegenerators.AllpagesPageGenerator(includeredirects=False, site=site)))
 
             try:
-                bot.run()
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(None, bot.run)
             except KeyboardInterrupt:
                 dump.write_dump(bot.dump_titles, True)
             except Exception:  # pragma: no cover
@@ -752,4 +754,50 @@ class WikiCommands(commands.Cog):
             finally:
                 dump.delete_dumps()
         else:
-            await ctx.send("You don't have admin permission.")
+            await ctx.send("You don't have editor permission.")
+
+    async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
+        await self.conditional_load_permissions()
+        user = interaction.user
+        if self._is_editor(user):
+            switch = {
+                'user': BuiltinNamespace.USER,
+                'user talk': BuiltinNamespace.USER_TALK,
+                'category': BuiltinNamespace.CATEGORY,
+                'category talk': BuiltinNamespace.CATEGORY_TALK,
+                'template': BuiltinNamespace.TEMPLATE,
+                'template talk': BuiltinNamespace.TEMPLATE_TALK,
+                'file': BuiltinNamespace.FILE,
+                'file talk': BuiltinNamespace.FILE_TALK,
+                'help': BuiltinNamespace.HELP,
+                'help talk': BuiltinNamespace.HELP_TALK,
+                'main': BuiltinNamespace.MAIN,
+                'talk': BuiltinNamespace.TALK,
+                'media': BuiltinNamespace.MEDIA,
+                'mediawiki': BuiltinNamespace.MEDIAWIKI,
+                'mediawiki talk': BuiltinNamespace.MEDIAWIKI_TALK,
+                'project': BuiltinNamespace.PROJECT,
+                'inkipedia': BuiltinNamespace.PROJECT,
+                'project talk': BuiltinNamespace.PROJECT_TALK,
+                'inkipedia talk': BuiltinNamespace.PROJECT_TALK,
+                'special': BuiltinNamespace.SPECIAL,
+            }
+            ns = switch.get(rule_namespace.lower().replace('_', ' '), 0)
+            namespace_filter_pages = pagegenerators.AllpagesPageGenerator(includeredirects=False, site=self.inkipedia, namespace=ns)
+            operation_switch = {
+                'equal': fr"^{re.escape(rule_title)}$",
+                'starts': fr"^{re.escape(rule_title)}",
+                'ends': fr"{re.escape(rule_title)}$",
+                'contains': fr"{re.escape(rule_title)}",
+            }
+            regex_str = switch.get(operation, None)
+            rule_pages = pagegenerators.RegexFilterPageGenerator(namespace_filter_pages, re.compile(regex_str))
+
+            bot = CategoryAddBot(rule_pages, category_no_ns)
+            bot.site = self.inkipedia
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, bot.run)
+
+        else:
+            await interaction.followup.send("You don't have editor permission.", ephemeral=True)
+
