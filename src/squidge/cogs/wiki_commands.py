@@ -18,7 +18,7 @@ from pywikibot import Site, Page, pagegenerators  # APISite used for type hintin
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace, Namespace
 
-from src.core_stable.scripts.category import CategoryAddBot
+from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
