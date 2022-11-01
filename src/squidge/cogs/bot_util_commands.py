@@ -12,6 +12,7 @@ class BotUtilCommands(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        super().__init__()
 
     @commands.command(
         name='Hello',

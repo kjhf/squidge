@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+from typing import List
 
 import discord
 from discord.ext import commands
@@ -9,7 +10,6 @@ from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRe
 
 from src.squidge.cogs.bot_util_commands import BotUtilCommands
 from src.squidge.cogs.wiki_commands import WikiCommands
-from src.squidge.cogs.wiki_slash_commands import WikiSlashCommands
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
 
@@ -17,6 +17,7 @@ class SquidgeBot(Bot):
 
     def __init__(self):
         self.wiki_commands = None
+        self.presence = ""
         intents = discord.Intents.default()
         intents.members = True  # Needed to call fetch_members for username & tag recognition (grant/deny)
         intents.message_content = True
@@ -26,6 +27,34 @@ class SquidgeBot(Bot):
             command_prefix=COMMAND_SYMBOL,
             intents=intents
         )
+
+    @staticmethod
+    def squidge_guilds() -> List[discord.Object]:
+        return [discord.Object(id=1020502841544151141), discord.Object(id=770990831569862656)]
+
+    async def setup_hook(self) -> None:
+        # Load cogs here; must be done before on_ready
+        # noinspection PyUnreachableCode
+        if __debug__:
+            logging.getLogger().setLevel(level="DEBUG")
+            self.presence = "--=IN DEV=-- (use " + COMMAND_SYMBOL + ")"
+        else:
+            self.presence = "in the cloud ⛅ (use " + COMMAND_SYMBOL + ")"
+        if 'pydevd' in sys.modules or 'pdb' in sys.modules or '_pydev_bundle.pydev_log' in sys.modules:
+            self.presence += ' (Debug Attached)'
+
+        # Load Cogs
+        await self.try_add_cog(BotUtilCommands)
+        self.wiki_commands = await self.try_add_cog(WikiCommands)
+
+        from src.squidge.cogs.wiki_slash_commands import WikiSlashCommands
+        _ = await self.try_add_cog(WikiSlashCommands)
+
+        # Sync slash commands
+        assert self.tree.get_commands(), "No commands were registered"
+        for guild in SquidgeBot.squidge_guilds():
+            slash_tree = await self.tree.sync(guild=guild)
+            assert slash_tree, f"Nothing synchronised in guild {guild}"
 
     async def try_add_cog(self, cog: commands.cog):
         try:
@@ -70,25 +99,8 @@ class SquidgeBot(Bot):
         ###
 
     async def on_ready(self):
-        # Load Cogs
-        await self.try_add_cog(BotUtilCommands)
-        self.wiki_commands = await self.try_add_cog(WikiCommands)
-        await self.try_add_cog(WikiSlashCommands)
-        await self.tree.sync()
-
         logging.info(f'Logged in as {self.user.name}, id {self.user.id}')
-
-        # noinspection PyUnreachableCode
-        if __debug__:
-            logging.getLogger().setLevel(level="DEBUG")
-            presence = "--=IN DEV=-- (use " + COMMAND_SYMBOL + ")"
-        else:
-            presence = "in the cloud ⛅ (use " + COMMAND_SYMBOL + ")"
-
-        if 'pydevd' in sys.modules or 'pdb' in sys.modules or '_pydev_bundle.pydev_log' in sys.modules:
-            presence += ' (Debug Attached)'
-
-        await self.change_presence(activity=discord.Game(name=presence))
+        await self.change_presence(activity=discord.Game(name=self.presence))
 
     def do_the_thing(self):
         loop = asyncio.get_event_loop()

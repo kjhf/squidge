@@ -440,7 +440,8 @@ class CategoryAddBot(CategoryPreprocess):
                  sort_by_last_name: bool = False,
                  create: bool = False,
                  comment: str = '',
-                 follow_redirects: bool = False) -> None:
+                 follow_redirects: bool = False,
+                 prompt=True) -> None:
         """Initializer."""
         super().__init__()
         self.generator = generator
@@ -450,6 +451,8 @@ class CategoryAddBot(CategoryPreprocess):
         self.create = create
         self.follow_redirects = follow_redirects
         self.comment = comment
+        if not prompt:
+            self.opt.always = True
 
     @staticmethod
     def sorted_by_last_name(catlink, pagelink) -> pywikibot.Page:

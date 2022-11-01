@@ -1,6 +1,6 @@
 # squidge
 Cleanup bot bridge project for mediawiki and discord, for squidging vandal grime and auto-improving wikis.
-Code on [Github](https://github.com/kjhf/squidge).
+Code on [GitHub](https://github.com/kjhf/squidge).
 
 ## Requirements
 - A [Discord Dev account](https://discord.com/developers/applications)

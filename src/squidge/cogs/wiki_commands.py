@@ -14,7 +14,7 @@ from discord import TextChannel, Message, User, Member, Interaction
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
-from pywikibot import Site, Page, pagegenerators  # APISite used for type hinting
+from pywikibot import Site, Page, pagegenerators, APISite  # APISite used for type hinting
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace, Namespace
 
@@ -55,7 +55,7 @@ class WikiCommands(commands.Cog):
                 pywikibot.config.family_files['splatoonwiki'] = file
                 # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
                 # noinspection PyTypeChecker
-                self.inkipedia = Site(code='en', fam='splatoonwiki')
+                self.inkipedia: APISite = Site(code='en', fam='splatoonwiki')
                 break
             else:
                 file = "../" + file
@@ -63,10 +63,11 @@ class WikiCommands(commands.Cog):
             logging.warning("Family file not found. Interwiki commands will not work.")
             # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
             # noinspection PyTypeChecker
-            self.inkipedia = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
+            self.inkipedia: APISite = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
 
         pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
         self.recent_vandals = set()
+        super().__init__()
 
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
@@ -260,9 +261,7 @@ class WikiCommands(commands.Cog):
         if self._is_admin(ctx.author):
             await self._nuke(ctx, user_to_nuke)
         elif self._is_editor(ctx.author):
-            # Maybe we could allow this
             # We have already checked the user's autoconfirmed status.
-
             first_edit_ts: pywikibot.Timestamp = user_to_nuke.first_edit[2]
             one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
             if first_edit_ts < one_day_ago:  # If the first edit was older than a day ago
@@ -782,7 +781,10 @@ class WikiCommands(commands.Cog):
                 'inkipedia talk': BuiltinNamespace.PROJECT_TALK,
                 'special': BuiltinNamespace.SPECIAL,
             }
-            ns = switch.get(rule_namespace.lower().replace('_', ' '), 0)
+            if rule_namespace:
+                ns = switch.get(rule_namespace.lower().replace('_', ' '), 0)
+            else:
+                ns = 0
             namespace_filter_pages = pagegenerators.AllpagesPageGenerator(includeredirects=False, site=self.inkipedia, namespace=ns)
             operation_switch = {
                 'equal': fr"^{re.escape(rule_title)}$",
@@ -790,10 +792,10 @@ class WikiCommands(commands.Cog):
                 'ends': fr"{re.escape(rule_title)}$",
                 'contains': fr"{re.escape(rule_title)}",
             }
-            regex_str = switch.get(operation, None)
+            regex_str = operation_switch.get(operation, None)
             rule_pages = pagegenerators.RegexFilterPageGenerator(namespace_filter_pages, re.compile(regex_str))
 
-            bot = CategoryAddBot(rule_pages, category_no_ns)
+            bot = CategoryAddBot(rule_pages, category_no_ns, comment=EDIT_WITH_AUTHORIZED_BY + user.__str__() + " adding category " + category_no_ns, prompt=False)
             bot.site = self.inkipedia
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, bot.run)
