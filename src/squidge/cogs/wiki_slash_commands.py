@@ -12,11 +12,12 @@ from src.squidge.entry.SquidgeBot import SquidgeBot
 
 
 class YesNoView(View):
-    def __init__(self, bot: 'SquidgeBot', args: Tuple[str, str, str, str]):
+    def __init__(self, bot: 'SquidgeBot', parent_interaction: discord.Interaction, args: Tuple[str, str, str, str]):
         """Constructor for YesNoView"""
         super().__init__()
         logging.debug("Created YesNo view")
         self.bot = bot
+        self.parent_interaction = parent_interaction
         self.category_no_ns, self.operation, self.namespace, self.rule_title = args
 
     @discord.ui.button(label="OK", style=discord.ButtonStyle.green, emoji="👍")
@@ -24,18 +25,22 @@ class YesNoView(View):
         from src.squidge.cogs.wiki_commands import WikiCommands
         logging.debug(f"OK clicked, button={button!r}, interation={interaction!r}")
         wiki: WikiCommands = self.bot.wiki_commands
+        await interaction.response.defer(ephemeral=True)
         await interaction.edit_original_response(
             content=f"Working on it! "
-                    f"Adding `Category:{self.category_no_ns}` to {self.namespace or 'article'} page titles that {self.operation} `{self.rule_title}`.")
+                    f"Adding `Category:{self.category_no_ns}` to {self.namespace or 'article'} page titles that {self.operation} `{self.rule_title}`.",
+        )
         await wiki.add_categories_with_perm_check(interaction, self.category_no_ns, self.operation, self.namespace, self.rule_title)
-        await interaction.edit_original_response(
+        await self.parent_interaction.edit_original_response(
             content=f"Finished adding `Category:{self.category_no_ns}` to {self.namespace or 'article'} page titles that {self.operation} `{self.rule_title}`."
-                    f"\nContribs: <https://splatoonwiki.org/wiki/Special:Contributions/SquidgeBot>")
+                    f"\nContribs: <https://splatoonwiki.org/wiki/Special:Contributions/SquidgeBot>",
+            view=None)
+        self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, emoji="🗑️")
     async def cancel_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         logging.debug(f"Cancel clicked, button={button!r}, interation={interaction!r}")
-        await interaction.delete_original_response()
+        await self.parent_interaction.delete_original_response()
         self.stop()
 
 
@@ -70,6 +75,7 @@ class WikiSlashCommands(commands.GroupCog, name="squidge"):
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     async def add_categories(self, interaction: discord.Interaction, operation: Choice[str], rule_argument: str, category: str):
         logging.debug("Add categories invoked")
+        await interaction.response.defer(ephemeral=True)
         if category.lower().startswith("category:"):
             category = category[len("category:"):]
         category_no_ns = category.replace('_', ' ')
@@ -80,6 +86,7 @@ class WikiSlashCommands(commands.GroupCog, name="squidge"):
             namespace = None
 
         title = title.replace('_', ' ')
-        await interaction.response.send_message(
-            f"Add `Category:{category_no_ns}` to {namespace or 'article'} page titles that {operation.value} `{title}`. Does that look correct?",
-            view=YesNoView(self.bot, (category_no_ns, operation.name, namespace, title)), ephemeral=True)
+        await interaction.edit_original_response(
+            content=f"Add `Category:{category_no_ns}` to {namespace or 'article'} page titles that {operation.value} `{title}`. Does that look correct?",
+            view=YesNoView(self.bot, interaction, (category_no_ns, operation.name, namespace, title))
+        )
