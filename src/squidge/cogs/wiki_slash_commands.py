@@ -20,16 +20,22 @@ class YesNoView(View):
         self.category_no_ns, self.operation, self.namespace, self.rule_title = args
 
     @discord.ui.button(label="OK", style=discord.ButtonStyle.green, emoji="👍")
-    async def ok_button_callback(self, interation: discord.Interaction, button: discord.ui.Button):
+    async def ok_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         from src.squidge.cogs.wiki_commands import WikiCommands
-        logging.debug(f"OK clicked, button={button!r}, interation={interation!r}")
+        logging.debug(f"OK clicked, button={button!r}, interation={interaction!r}")
         wiki: WikiCommands = self.bot.wiki_commands
-        self.stop()
-        await wiki.add_categories_with_perm_check(interation, self.category_no_ns, self.operation, self.namespace, self.rule_title)
+        await interaction.edit_original_response(
+            content=f"Working on it! "
+                    f"Adding `Category:{self.category_no_ns}` to {self.namespace or 'article'} page titles that {self.operation} `{self.rule_title}`.")
+        await wiki.add_categories_with_perm_check(interaction, self.category_no_ns, self.operation, self.namespace, self.rule_title)
+        await interaction.edit_original_response(
+            content=f"Finished adding `Category:{self.category_no_ns}` to {self.namespace or 'article'} page titles that {self.operation} `{self.rule_title}`."
+                    f"\nContribs: <https://splatoonwiki.org/wiki/Special:Contributions/SquidgeBot>")
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, emoji="🗑️")
-    async def cancel_button_callback(self, interation: discord.Interaction, button: discord.ui.Button):
-        logging.debug(f"Cancel clicked, button={button!r}, interation={interation!r}")
+    async def cancel_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        logging.debug(f"Cancel clicked, button={button!r}, interation={interaction!r}")
+        await interaction.delete_original_response()
         self.stop()
 
 
@@ -54,10 +60,10 @@ class WikiSlashCommands(commands.GroupCog, name="squidge"):
     @app_commands.command(name="add_category", description="Manipulate categories on the wiki")
     @app_commands.describe(operation='What is the operation? Pages that ...')
     @app_commands.choices(operation=[
-        Choice(name='equal', value="are named"),
-        Choice(name='starts', value="start with"),
-        Choice(name='ends', value="end with"),
-        Choice(name='contains', value="contain"),
+        Choice(name='are named', value="are named"),
+        Choice(name='start with', value="start with"),
+        Choice(name='end with', value="end with"),
+        Choice(name='contain', value="contain"),
     ])
     @app_commands.describe(rule_argument="What is the pattern of the page you're looking for?")
     @app_commands.describe(category="The category to add")
@@ -75,5 +81,5 @@ class WikiSlashCommands(commands.GroupCog, name="squidge"):
 
         title = title.replace('_', ' ')
         await interaction.response.send_message(
-            f"Add `Category:{category_no_ns}` to {namespace or 'article'} pages that {operation.value} `{title}`. Does that look correct?",
-            view=YesNoView(self.bot, (category_no_ns, operation.name, namespace, title)))
+            f"Add `Category:{category_no_ns}` to {namespace or 'article'} page titles that {operation.value} `{title}`. Does that look correct?",
+            view=YesNoView(self.bot, (category_no_ns, operation.name, namespace, title)), ephemeral=True)

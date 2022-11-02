@@ -16,11 +16,11 @@ from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
 from pywikibot import Site, Page, pagegenerators, APISite  # APISite used for type hinting
 from pywikibot.page import Revision
-from pywikibot.site._namespace import BuiltinNamespace, Namespace
+from pywikibot.site._namespace import BuiltinNamespace
 
+from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
-from src.squidge.entry.consts import COMMAND_SYMBOL
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
@@ -787,10 +787,10 @@ class WikiCommands(commands.Cog):
                 ns = 0
             namespace_filter_pages = pagegenerators.AllpagesPageGenerator(includeredirects=False, site=self.inkipedia, namespace=ns)
             operation_switch = {
-                'equal': fr"^{re.escape(rule_title)}$",
-                'starts': fr"^{re.escape(rule_title)}",
-                'ends': fr"{re.escape(rule_title)}$",
-                'contains': fr"{re.escape(rule_title)}",
+                'are named': fr"^{re.escape(rule_title)}$",
+                'start with': fr"^{re.escape(rule_title)}",
+                'end with': fr"{re.escape(rule_title)}$",
+                'contain': fr"{re.escape(rule_title)}",
             }
             regex_str = operation_switch.get(operation, None)
             rule_pages = pagegenerators.RegexFilterPageGenerator(namespace_filter_pages, re.compile(regex_str))
@@ -802,4 +802,3 @@ class WikiCommands(commands.Cog):
 
         else:
             await interaction.followup.send("You don't have editor permission.", ephemeral=True)
-
