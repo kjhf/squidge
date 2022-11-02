@@ -58,14 +58,14 @@ class WikiSlashCommands(commands.GroupCog, name="squidge"):
         await ctx.send("Hello!")
 
     @app_commands.command(name="add_category", description="Manipulate categories on the wiki")
-    @app_commands.describe(operation='What is the operation? Pages that ...')
+    @app_commands.describe(operation='What is the operation? Page titles that ...')
     @app_commands.choices(operation=[
         Choice(name='are named', value="are named"),
         Choice(name='start with', value="start with"),
         Choice(name='end with', value="end with"),
         Choice(name='contain', value="contain"),
     ])
-    @app_commands.describe(rule_argument="What is the pattern of the page you're looking for?")
+    @app_commands.describe(rule_argument="What is the page title or fragment that you're looking for?")
     @app_commands.describe(category="The category to add")
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     async def add_categories(self, interaction: discord.Interaction, operation: Choice[str], rule_argument: str, category: str):

@@ -53,8 +53,7 @@ class SquidgeBot(Bot):
         # Sync slash commands
         assert self.tree.get_commands(), "No commands were registered"
         for guild in SquidgeBot.squidge_guilds():
-            slash_tree = await self.tree.sync(guild=guild)
-            assert slash_tree, f"Nothing synchronised in guild {guild}"
+            self.tree.copy_global_to(guild=guild)
 
     async def try_add_cog(self, cog: commands.cog):
         try:
