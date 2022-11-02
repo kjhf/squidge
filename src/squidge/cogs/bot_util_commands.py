@@ -32,4 +32,4 @@ class BotUtilCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}invite',
         pass_ctx=True)
     async def invite(self, ctx: Context):
-        await ctx.send(f"https://discordapp.com/oauth2/authorize?client_id={os.getenv('DISCORD_BOT_CLIENT_ID')}&scope=bot%20applications.commands&permissions=8")
+        await ctx.send(f"https://discordapp.com/oauth2/authorize?client_id={os.getenv('DISCORD_BOT_CLIENT_ID')}&scope=bot%20applications.commands&permissions=2147483648")
