@@ -625,10 +625,12 @@ class WikiCommands(commands.Cog):
                     if deleted == 1:
                         count += 1
                     else:
-                        logging.warning(f"Did not delete {page}.")
+                        logging.error(f"Failed to delete {page}.")
                     continue
-            # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
+                else:
+                    logging.warning(f"Did not delete {page} because its contents page is in use.")
 
+            # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
             if page.isRedirectPage() or REDIRECT_TEXT in page.text[:1024]:
                 if page.isRedirectPage():
                     target_page = page.getRedirectTarget()
@@ -646,7 +648,7 @@ class WikiCommands(commands.Cog):
                     if deleted == 1:
                         count += 1
                     else:
-                        logging.warning(f"Did not delete {page}.")
+                        logging.error(f"Failed to delete {page}.")
                 elif target_page.isRedirectPage():
                     # Double redirect
                     target_target_page = target_page.getRedirectTarget()
@@ -659,7 +661,7 @@ class WikiCommands(commands.Cog):
                         if deleted == 1:
                             count += 1
                         else:
-                            logging.warning(f"Did not delete {page}.")
+                            logging.error(f"Failed to delete {page}.")
                     else:
                         # Fix the redirect instead
                         page.set_redirect_target(target_target_page,
@@ -677,7 +679,9 @@ class WikiCommands(commands.Cog):
                         if deleted == 1:
                             count += 1
                         else:
-                            logging.warning(f"Did not delete {page}.")
+                            logging.error(f"Failed to delete {page}.")
+            else:
+                logging.info(f"Not taking action against {page}: it is not a talk or redirect.")
         return count
 
     @commands.command(

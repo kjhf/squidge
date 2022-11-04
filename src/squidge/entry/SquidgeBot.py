@@ -10,6 +10,7 @@ from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRe
 
 from src.squidge.cogs.bot_util_commands import BotUtilCommands
 from src.squidge.cogs.wiki_commands import WikiCommands
+from src.squidge.cogs.server_commands import ServerCommands
 from src.squidge.entry.consts import COMMAND_SYMBOL
 
 
@@ -46,6 +47,7 @@ class SquidgeBot(Bot):
         # Load Cogs
         await self.try_add_cog(BotUtilCommands)
         self.wiki_commands = await self.try_add_cog(WikiCommands)
+        await self.try_add_cog(ServerCommands)
 
         from src.squidge.cogs.wiki_slash_commands import WikiSlashCommands
         _ = await self.try_add_cog(WikiSlashCommands)
