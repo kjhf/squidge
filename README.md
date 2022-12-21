@@ -28,7 +28,7 @@ where the owner id is your Discord id.
 
 Owner is bot owner and highest privilege. Owner(s) may assign new user ids.
 
-Admin are power users that can do anything to the wiki that the bot has permissions for. Admins cannot change uesr ids.
+Admin are power users that can do anything to the wiki that the bot has permissions for. Admins cannot change user ids.
 
 Editors are users that may use the bot but some functionality is restricted.
 
