@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from itertools import chain
-from typing import Optional, Union
+from typing import Optional, Union, Iterable, List
 
 import pywikibot.config
 import requests
@@ -612,76 +612,78 @@ class WikiCommands(commands.Cog):
         orphaned_summary = auth_by + "Deleting orphaned talk page in [[:" + category_title + "]]"
         broken_redirect_summary = auth_by + "Deleting broken redirect page in [[:" + category_title + "]]"
         unused_redirect_summary = auth_by + "Deleting unused or superseded redirect page in [[:" + category_title + "]]"
-        pages = chain(cat_page.articles(), cat_page.subcategories(recurse=True))
+        unused_category_summary = auth_by + "Empty category marked for deletion in [[:" + category_title + "]]"
         count = 0
-        for page in pages:
+        for page in chain(cat_page.articles(), cat_page.subcategories(recurse=True)):
             await asyncio.sleep(0.1)  # yield
 
             if page.isTalkPage():
                 content_page = page.toggleTalkPage()
                 if content_page is None or not content_page.exists() or content_page.isRedirectPage():
                     # Delete the orphan
-                    deleted = page.delete(reason=orphaned_summary, prompt=False)
-                    if deleted == 1:
-                        count += 1
-                    else:
-                        logging.error(f"Failed to delete {page}.")
+                    deleted = self._try_delete_page(page, orphaned_summary)
+                    count = count + int(deleted)
                     continue
                 else:
                     logging.warning(f"Did not delete {page} because its contents page is in use.")
 
+            if page.is_categorypage():
+                subpages = chain(page.articles(), page.subcategories(recurse=True))
+                if not any(subpages):
+                    # Delete the empty category
+                    deleted = self._try_delete_page(page, unused_category_summary)
+                    count = count + int(deleted)
+                    continue
+                else:
+                    logging.warning(f"Did not delete {page} because it has subpages [{', '.join([subpage.__str__() for subpage in subpages])}].")
+
             # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
-            if page.isRedirectPage() or REDIRECT_TEXT in page.text[:1024]:
+            previous_revision: Optional[str] = None
+            if page.isRedirectPage() \
+                    or (REDIRECT_TEXT in page.text[:1024]) \
+                    or ((previous_revision := self._previous_revision_text(page)) and REDIRECT_TEXT in previous_revision):
                 if page.isRedirectPage():
                     target_page = page.getRedirectTarget()
                 else:
-                    start_index = page.text.index(REDIRECT_TEXT) + len(REDIRECT_TEXT)
-                    target_page_title = page.text[start_index: page.text.index("]]", start_index)].lstrip(': ')
+                    text = previous_revision if previous_revision else page.text
+                    start_index = text.index(REDIRECT_TEXT) + len(REDIRECT_TEXT)
+                    target_page_title = text[start_index:text.index("]]", start_index)].lstrip(': ')
                     target_page = Page(self.inkipedia, target_page_title)
 
                 if target_page is None or not target_page.exists():
                     # Delete the broken redirect
-                    deleted = page.delete(
-                        reason=broken_redirect_summary + " targeting " + (
-                            target_page.title() if target_page else "non-existent page"),
-                        prompt=False)
-                    if deleted == 1:
-                        count += 1
-                    else:
-                        logging.error(f"Failed to delete {page}.")
+                    deleted = self._try_delete_page(page, broken_redirect_summary + " targeting " + (
+                        target_page.title() if target_page else "non-existent page"))
+                    count = count + int(deleted)
+                    continue
                 elif target_page.isRedirectPage():
                     # Double redirect
                     target_target_page = target_page.getRedirectTarget()
                     if target_target_page == page:
                         # Circular reference
-                        deleted = page.delete(
-                            reason=broken_redirect_summary + " targeting " + (
-                                target_page.title() if target_page else "non-existent page"),
-                            prompt=False)
-                        if deleted == 1:
-                            count += 1
-                        else:
-                            logging.error(f"Failed to delete {page}.")
+                        deleted = self._try_delete_page(page, broken_redirect_summary + " targeting " + (
+                                target_page.title() if target_page else "non-existent page"))
+                        count = count + int(deleted)
+                        continue
                     else:
                         # Fix the redirect instead
-                        page.set_redirect_target(target_target_page,
-                                                 summary=auth_by + "fixing double redirect to " + target_target_page.title(
-                                                     as_link=True))
+                        page.set_redirect_target(
+                            target_target_page,
+                            summary=auth_by + "fixing double redirect to " + target_target_page.title(as_link=True),
+                            force=True)  # If the page isn't a redirect, which it isn't because it's marked with {{delete}}, it will not be corrected without this
                 else:
                     # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
-                    if any(page.backlinks(total=2)):
-                        logging.warning(f"Did not delete {page} because it is in use.")
+                    backlinks: List[pywikibot.Page] = list(page.backlinks(total=3))
+                    trig_clean_up_page = "https://splatoonwiki.org/wiki/User_talk%3ATrig_Jegman%2FProject_Clean-Up"  # thanks Trig.
+                    if backlinks and any(backlink and backlink.full_url() != trig_clean_up_page for backlink in backlinks):
+                        logging.warning(f"Did not delete {page} because it is in use (e.g. [{', '.join(backlink.full_url() for backlink in backlinks)}]).")
                     else:
-                        deleted = page.delete(
-                            reason=unused_redirect_summary + " targeting " + (
-                                target_page.title() if target_page else "non-existent page"),
-                            prompt=False)
-                        if deleted == 1:
-                            count += 1
-                        else:
-                            logging.error(f"Failed to delete {page}.")
+                        deleted = self._try_delete_page(page, unused_redirect_summary + " targeting " + (
+                            target_page.title() if target_page else "non-existent page"))
+                        count = count + int(deleted)
+                        continue
             else:
-                logging.info(f"Not taking action against {page}: it is not a talk or redirect.")
+                logging.info(f"Not taking action against {page}.")
         return count
 
     @commands.command(
@@ -811,3 +813,26 @@ class WikiCommands(commands.Cog):
 
         else:
             await interaction.followup.send("You don't have editor permission.", ephemeral=True)
+
+    @staticmethod
+    def _try_delete_page(page, unused_category_summary) -> bool:
+        try:
+            deleted = page.delete(reason=unused_category_summary, prompt=False)
+        except pywikibot.exceptions.Error as err:
+            logging.error(f"Failed to delete {page} because a wiki exception occurred: {err}.", exc_info=err)
+            return False
+
+        if deleted == 1:
+            return True
+        else:
+            #  0 = no action was done
+            # -1 = marked for deletion instead
+            logging.error(f"Failed to delete {page} (delete returned {deleted}).")
+            return False
+
+    @staticmethod
+    def _previous_revision_text(page) -> Optional[str]:
+        """Return the previous revision's text for this page (i.e. the one before latest); None if there isn't one"""
+        latest: 'Revision' = page.latest_revision
+        parent_id = latest.get("parentid")
+        return page.getOldVersion(parent_id) if parent_id else None
