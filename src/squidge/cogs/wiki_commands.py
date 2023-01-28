@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from itertools import chain
-from typing import Optional, Union, Iterable, List
+from typing import Optional, Union, List
 
 import pywikibot.config
 import requests
@@ -25,6 +25,7 @@ from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, I
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
 REDIRECT_TEXT = "#REDIRECT [["
+DELETE_REASON_REGEX = re.compile(r"{{[dD]elete\s*?\|\s*([\s\S]*?)}}")
 
 
 class WikiCommands(commands.Cog):
@@ -613,6 +614,7 @@ class WikiCommands(commands.Cog):
         broken_redirect_summary = auth_by + "Deleting broken redirect page in [[:" + category_title + "]]"
         unused_redirect_summary = auth_by + "Deleting unused or superseded redirect page in [[:" + category_title + "]]"
         unused_category_summary = auth_by + "Empty category marked for deletion in [[:" + category_title + "]]"
+        author_request_summary = auth_by + "Deleting page by author request in [[:" + category_title + "]]"
         count = 0
         for page in chain(cat_page.articles(), cat_page.subcategories(recurse=True)):
             await asyncio.sleep(0.1)  # yield
@@ -625,7 +627,8 @@ class WikiCommands(commands.Cog):
                     count = count + int(deleted)
                     continue
                 else:
-                    logging.warning(f"Did not delete {page} because its contents page is in use.")
+                    logging.info(f"Did not delete {page} because its contents page is in use.")
+                    continue
 
             if page.is_categorypage():
                 subpages = chain(page.articles(), page.subcategories(recurse=True))
@@ -635,7 +638,59 @@ class WikiCommands(commands.Cog):
                     count = count + int(deleted)
                     continue
                 else:
-                    logging.warning(f"Did not delete {page} because it has subpages [{', '.join([subpage.__str__() for subpage in subpages])}].")
+                    logging.info(f"Did not delete {page} because it has subpages [{', '.join([subpage.__str__() for subpage in subpages])}].")
+                    continue
+
+            if page.namespace() == BuiltinNamespace.USER.value:
+                if self._is_in_use(page):
+                    logging.info(f"Skipping evaluating user page {page} because it is in use.")
+                    continue
+                try:
+                    if page.latest_revision.user == page.oldest_revision.user:
+                        deleted = self._try_delete_page(page, author_request_summary)
+                        count = count + int(deleted)
+                    else:
+                        logging.info(f"Not taking action against {page}: user page but someone other than the author requested deletion.")
+                except Exception as error:
+                    logging.error(error)
+                continue
+
+            if page.is_filepage():
+                if self._is_in_use(page):
+                    logging.info(f"Skipping evaluating file page {page} because it is in use.")
+                    continue
+
+                page.revisions()  # load revisions
+                try:
+                    first_revision: Revision = page.oldest_revision
+                    latest_revision = page.latest_revision
+                    match = DELETE_REASON_REGEX.search(page.text)
+                    if first_revision.user == latest_revision.user:
+                        reason = match.group(1).lower() if match else None
+                        if not match or "author req" in reason:
+                            deleted = self._try_delete_page(page, author_request_summary)
+                            count = count + int(deleted)
+                            continue
+                        elif "dupe file" in reason or "duplicate" in reason:
+                            if "file:" in reason:
+                                deleted = self._try_delete_page(page,
+                                                                author_request_summary + " with reason: " + match.group(
+                                                                    1))
+                                count = count + int(deleted)
+                            else:
+                                logging.info(
+                                    f"Not taking action against {page}: author requested deletion but their dupe reason did not contain a file target.")
+                            continue
+                        else:
+                            logging.info(
+                                f"Not taking action against {page}: author requested deletion but I didn't understand the reason.")
+                    else:
+                        # Extend this to include user and wiki image handling and send off notices.
+                        logging.info(
+                            f"Not taking action against {page}: an editor other than the author requested deletion.")
+                except Exception as error:
+                    logging.error(error)
+                    continue
 
             # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
             previous_revision: Optional[str] = None
@@ -673,15 +728,13 @@ class WikiCommands(commands.Cog):
                             force=True)  # If the page isn't a redirect, which it isn't because it's marked with {{delete}}, it will not be corrected without this
                 else:
                     # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
-                    backlinks: List[pywikibot.Page] = list(page.backlinks(total=3))
-                    trig_clean_up_page = "https://splatoonwiki.org/wiki/User_talk%3ATrig_Jegman%2FProject_Clean-Up"  # thanks Trig.
-                    if backlinks and any(backlink and backlink.full_url() != trig_clean_up_page for backlink in backlinks):
-                        logging.warning(f"Did not delete {page} because it is in use (e.g. [{', '.join(backlink.full_url() for backlink in backlinks)}]).")
+                    if self._is_in_use(page):
+                        logging.info(f"Did not delete {page} because it is in use.")
                     else:
                         deleted = self._try_delete_page(page, unused_redirect_summary + " targeting " + (
-                            target_page.title() if target_page else "non-existent page"))
+                            target_page.title(as_link=True) if target_page else "non-existent page"))
                         count = count + int(deleted)
-                        continue
+                    continue
             else:
                 logging.info(f"Not taking action against {page}.")
         return count
@@ -813,6 +866,13 @@ class WikiCommands(commands.Cog):
 
         else:
             await interaction.followup.send("You don't have editor permission.", ephemeral=True)
+
+    @staticmethod
+    def _is_in_use(page):
+        # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
+        backlinks: List[pywikibot.Page] = list(page.backlinks(total=3))
+        trig_clean_up_page = "https://splatoonwiki.org/wiki/User_talk%3ATrig_Jegman%2FProject_Clean-Up"  # thanks Trig.
+        return backlinks and any(backlink and backlink.full_url() != trig_clean_up_page for backlink in backlinks)
 
     @staticmethod
     def _try_delete_page(page, unused_category_summary) -> bool:
