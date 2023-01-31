@@ -1333,7 +1333,7 @@ class Subject(interwiki_graph.Subject):
                 if site != self.origin.site:
                     new[site].append(page)
                 elif page != self.origin:
-                    self.problem('Found link to ' + page)
+                    self.problem(f'Found link to {page}')
                     self.whereReport(page)
                     errorCount += 1
 
@@ -1341,7 +1341,7 @@ class Subject(interwiki_graph.Subject):
         for site, pages in new.items():
             if len(pages) > 1:
                 errorCount += 1
-                self.problem('Found more than one link for ' + site)
+                self.problem(f'Found more than one link for {site}')
 
         if not errorCount and not self.conf.select:
             # no errors, so all lists have only one item
@@ -2244,6 +2244,8 @@ class InterwikiDumps(OptionHandler):
         :param append: if a dump already exits, append the page titles to it
             if True else overwrite it.
         """
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
         filename = os.path.join(self.path,
                                 self.FILE_PATTERN.format(site=self.site))
         mode = 'appended' if append else 'written'
