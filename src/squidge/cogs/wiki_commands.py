@@ -27,6 +27,7 @@ DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
 REDIRECT_TEXT = "#REDIRECT [["
 DELETE_REASON_REGEX = re.compile(r"{{[dD]elete\s*?\|\s*([\s\S]*?)}}")
+AUTHOR_REQ_REGEX = re.compile(r"(author req|n[o']t?.*?need|user image)")
 
 
 class WikiCommands(commands.Cog):
@@ -668,15 +669,13 @@ class WikiCommands(commands.Cog):
                     match = DELETE_REASON_REGEX.search(page.text)
                     if first_revision.user == latest_revision.user:
                         reason = match.group(1).lower() if match else None
-                        if not match or "author req" in reason:
+                        if not match or AUTHOR_REQ_REGEX.search(reason):
                             deleted = self._try_delete_page(page, author_request_summary)
                             count = count + int(deleted)
                             continue
                         elif "dupe file" in reason or "duplicate" in reason:
                             if "file:" in reason:
-                                deleted = self._try_delete_page(page,
-                                                                author_request_summary + " with reason: " + match.group(
-                                                                    1))
+                                deleted = self._try_delete_page(page, f"{author_request_summary} with reason: {match.group(1)}")
                                 count = count + int(deleted)
                             else:
                                 logging.info(
