@@ -27,7 +27,7 @@ DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
 REDIRECT_TEXT = "#REDIRECT [["
 DELETE_REASON_REGEX = re.compile(r"{{[dD]elete\s*?\|\s*([\s\S]*?)}}")
-AUTHOR_REQ_REGEX = re.compile(r"(author req|n[o']t?.*?need|user image)")
+AUTHOR_REQ_REGEX = re.compile(r"(author req|(?:un|n[o']t?).*?(?:need|used?)|user image)")
 
 
 class WikiCommands(commands.Cog):
