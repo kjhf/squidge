@@ -327,6 +327,7 @@ pages on a language, run it with option "-start:!", and if it takes so long
 that you have to break it off, use "-continue" next time.
 
 """
+import asyncio
 #
 # (C) Pywikibot team, 2003-2022
 #
@@ -1383,7 +1384,8 @@ class Subject(interwiki_graph.Subject):
 
         # Loop over the ones that have one solution, so are in principle
         # not a problem.
-        acceptall = False
+        # SLATE: IMPORTANT EDIT! Changed False here to auto as the bot will ask on the console otherwise, despite being in auto mode
+        acceptall = self.conf.auto
         for site, pages in new.items():
             if len(pages) != 1:
                 continue
@@ -2023,7 +2025,9 @@ class InterwikiBot:
     def queryStep(self) -> None:
         """Delete the ones that are done now."""
         self.oneQuery()
-        for i in range(len(self.subjects) - 1, -1, -1):
+        count = len(self.subjects)
+        pywikibot.output(f"queryStep: iterating {count} subjects.")
+        for i in range(count - 1, -1, -1):
             subj = self.subjects[i]
             if subj.isDone():
                 subj.finish()
@@ -2042,10 +2046,19 @@ class InterwikiBot:
         self.counts[site] -= count
         self.counts = +self.counts  # remove zero and negative counts
 
-    def run(self) -> None:
-        """Start the process until finished."""
-        while not self.isDone():
+    async def run(self) -> None:
+        """
+        Start the process until finished.
+        SLATE: IMPORTANT EDIT! This routine is now async, with yields every iteration
+        """
+        done = self.isDone()
+        if done:
+            pywikibot.output(f"run: no work to do - finishing immediately!")
+
+        while not done:
+            await asyncio.sleep(0.1)  # yield
             self.queryStep()
+            done = self.isDone()
 
 
 def compareLanguages(old, new, insite, summary):

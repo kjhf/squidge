@@ -789,48 +789,34 @@ class WikiCommands(commands.Cog):
     async def perform_interwiki(self, ctx: Context):
         await self.conditional_load_permissions()
         if self._is_editor(ctx.author):
-            current_channel_log = ChannelLogHandler(ctx.channel, pywikibot.logging.logging.getLogger())
             await ctx.send("Beginning interwiki.")
             interwiki_conf = InterwikiBotConfig()
             # tempting to run in async mode, but we control the event loop, so don't do that
-            interwiki_conf.readOptions("-restore all")
+            # interwiki_conf.readOptions("-restore all")
 
             # Do not use additional summary with autonomous mode
             interwiki_conf.summary = EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " interwiki update"
             interwiki_conf.auto = True
-            interwiki_conf.minsubjects = 20  # don't consume the whole wiki in one go -- 100 is way too much
+            interwiki_conf.minsubjects = 10  # don't consume the whole wiki in one go -- 100 is way too much
             interwiki_conf.maxquerysize = 25  # was 50
             site = self.inkipedia
 
             # ensure that we don't try to change main page
             main_page_name = site.siteinfo['mainpage']
             interwiki_conf.skip.add(pywikibot.Page(site, main_page_name))
-            dump = InterwikiDumps(site=site, do_continue=True, restore_all=interwiki_conf.restore_all)
-
-            # Slate: to work round the AllPages bug (https://phabricator.wikimedia.org/T101400),
-            # lets first dump a list of titles we will be checking.
-            dump.write_dump((page.title(as_link=True) for page in (pagegenerators.AllpagesPageGenerator(includeredirects=False, site=site))),
-                            append=False)
-
             bot = InterwikiBot(interwiki_conf)
             bot.site = site
-            bot.setPageGenerator(iter(dump.read_dump()))
+            bot.setPageGenerator(iter(pagegenerators.AllpagesPageGenerator(includeredirects=False)))
 
             try:
-                asyncio.get_event_loop().run_in_executor(None, self.run_interwiki_bot_async, bot, current_channel_log)
+                await bot.run()
             except Exception as err:
                 pywikibot.exception()
                 await ctx.send(f'Interwiki terminated early: {err[:2000]}')
             finally:
-                dump.delete_dumps()
+                await ctx.send(f'Interwiki finished.')
         else:
             await ctx.send("You don't have editor permission.")
-
-    @staticmethod
-    def run_interwiki_bot_async(bot, channel_logger):
-        bot.run()
-        channel_logger.close()
-        pywikibot.output('Interwiki ran successfully.')
 
     async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
         await self.conditional_load_permissions()
