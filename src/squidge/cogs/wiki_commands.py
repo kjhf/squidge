@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+from collections import defaultdict
 from itertools import chain
 from typing import Optional, Union, List
 
@@ -15,10 +16,11 @@ from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
 from pywikibot import Site, Page, pagegenerators, APISite  # APISite used for type hinting
+from pywikibot.exceptions import PageRelatedError
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
-from src.squidge.discordsupport.channel_logger import ChannelLogHandler
+from src.core_stable.pywikibot.data import api
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
@@ -817,6 +819,108 @@ class WikiCommands(commands.Cog):
                 await ctx.send(f'Interwiki finished.')
         else:
             await ctx.send("You don't have editor permission.")
+
+    @commands.command(
+        name='iotm',
+        description="Run Inkipedian of the Month command",
+        brief="Run Inkipedian of the Month command",
+        help=f'{COMMAND_SYMBOL}iotm',
+        pass_ctx=True)
+    async def perform_iotm(self, ctx: Context):
+        await self.conditional_load_permissions()
+        if self._is_admin(ctx.author):
+            await ctx.send("Beginning Inkipedian of the Month command.")
+            edited_page = await self._do_iotm()
+            await ctx.send(f"Done. Please see {edited_page.full_url()}")
+
+    async def _do_iotm(self):
+        # Define namespace weighting
+        ns_to_score = {
+            BuiltinNamespace.CATEGORY: 1,
+            BuiltinNamespace.CATEGORY_TALK: 0.1,
+            BuiltinNamespace.TEMPLATE: 5,
+            BuiltinNamespace.TEMPLATE_TALK: 0.5,
+            BuiltinNamespace.FILE: 1,
+            BuiltinNamespace.FILE_TALK: 0.1,
+            BuiltinNamespace.HELP: 1,
+            BuiltinNamespace.HELP_TALK: 0.1,
+            BuiltinNamespace.MAIN: 3,
+            BuiltinNamespace.TALK: 0.2,
+            BuiltinNamespace.MEDIA: 1,
+            BuiltinNamespace.MEDIAWIKI: 1,
+            BuiltinNamespace.MEDIAWIKI_TALK: 0.1,
+            BuiltinNamespace.PROJECT: 1,
+            BuiltinNamespace.PROJECT_TALK: 0.1,
+            460: 1,  # Campaign
+            461: 0.1,  # Campaign talk
+            828: 5,  # Module
+            829: 0.5,  # Module talk
+            2300: 5,  # Gadget
+            2301: 0.5,  # Gadget talk
+            3000: 2,  # Competitive
+            3001: 0.2,  # Competitive talk
+            # For all other namespaces, score nothing
+        }
+
+        # Fist, gather a list of users who have edited in the last month.
+        start = datetime.datetime.utcnow()
+        end = start - datetime.timedelta(days=31)
+        if start and end:
+            self.inkipedia.assert_valid_iter_params('usercontribs', start, end, False)
+
+        users = set()
+        for user in self.inkipedia.allusers():
+            count = user["editcount"]
+            if count and int(count):
+                username = user["name"]
+                users.add(username)
+                await asyncio.sleep(0.001)  # yield
+
+        # Score each one
+        logging.info(f"All users received, {len(users)} in the set.")
+        user_scores = defaultdict(int)
+        for user in users:
+            await asyncio.sleep(0.001)  # yield
+            # Used self.inkipedia.usercontribs(user=user, start=start, end=end) but this does not return the contrib sizediff that we need ._.
+            ucgen = self.inkipedia._generator(api.ListGenerator,
+                                              type_arg='usercontribs',
+                                              ucprop='title|sizediff',
+                                              namespaces=None,
+                                              total=None,
+                                              uctoponly=False)
+            ucgen.request['ucuser'] = user
+            ucgen.request['ucstart'] = str(start)
+            ucgen.request['ucend'] = str(end)
+            option_set = api.OptionSet(self.inkipedia, 'usercontribs', 'show')
+            option_set['minor'] = None
+            ucgen.request['ucshow'] = option_set
+
+            for contrib in ucgen:
+                bytes_changed = abs(int(contrib['sizediff']))
+                user_scores[user] += (bytes_changed * ns_to_score.get(int(contrib['ns']), 0))
+
+        # Post results to the page
+        best = [pair for pair in sorted(user_scores.items(), key=lambda kv: kv[1], reverse=True) if pair[1] > 0]
+        iotm_page = Page(self.inkipedia, self.inkipedia.username() + "/iotm", ns=BuiltinNamespace.USER)
+        iotm_page.text = """
+{| class="wikitable"
+! User
+! Score
+|-
+"""
+        for kv in best:
+            iotm_page.text += f"\n| {kv[0]}\n|{kv[1]}\n|-"
+
+        iotm_page.text += "\n|}"
+        iotm_page.save(summary=DEFAULT_EDIT + f" Updating IotM scores since {str(end)}", minor=True, botflag=True, force=True)
+        return iotm_page
+
+    @staticmethod
+    def _try_get_user_from_revision(revision):
+        try:
+            return revision.userName()
+        except PageRelatedError:
+            return None
 
     async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
         await self.conditional_load_permissions()
