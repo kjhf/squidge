@@ -16,11 +16,11 @@ from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
 from pywikibot import Site, Page, pagegenerators, APISite  # APISite used for type hinting
+from pywikibot.data import api
 from pywikibot.exceptions import PageRelatedError
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
-from src.core_stable.pywikibot.data import api
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
