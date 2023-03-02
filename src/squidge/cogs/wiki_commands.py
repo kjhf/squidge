@@ -310,9 +310,9 @@ class WikiCommands(commands.Cog):
                     content = content.replace("[", "").replace("]", "")
 
                     # In each false trigger, if it's a whole word, remove it
-                    # (?:\s|\b) is there to clean up the double space if not at the end of the string
+                    # [\s\W\b] is there to match space/punctuation/end of the string
                     for word in self.permissions["false-triggers"]:
-                        content = re.sub(r"\b(" + word + r")(?:\s|\b)", "", content, flags=re.I)
+                        content = re.sub(r"[\s\W\b](" + word + r")[\s\W\b]", "", content, flags=re.I)
 
                     logging.info(f"handle_inkipedia_event: Querying {content}")
                     files = {
@@ -341,15 +341,7 @@ class WikiCommands(commands.Cog):
 
                             if matched_phrases:
                                 self.recent_vandals.add(source_user)
-                                if current_level == "low":
-                                    return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
-                                elif current_level == "medium":
-                                    return f"⚠ Probable vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
-                                elif current_level == "high":
-                                    return f"🚨 Vandalism, matched: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
-                                else:
-                                    logging.error(f"Sight engine unknown intensity failure {current_level=}: {response.text}")
-                                    return f"❓ Possible vandalism, matched: ||[{', '.join(matched_phrases)}]||. {message.jump_url} " + await self._get_patrol_pings()
+                                return f"🚨 {current_level} intensity match: ||[{', '.join(matched_phrases)}]|| {message.jump_url} " + await self._get_patrol_pings()
                             else:
                                 logging.info(f"handle_inkipedia_event: ✔ Checked but had only whitelisted phrases")
                         else:
@@ -361,7 +353,6 @@ class WikiCommands(commands.Cog):
                     else:
                         logging.error("Sight engine unknown response: " + response.text)
                         return None
-
         else:
             logging.warning("No embeds found in Wiki Notifier message!")
 
@@ -375,43 +366,61 @@ class WikiCommands(commands.Cog):
     async def false(self, ctx: Context, *, phrase: str):
         await self.conditional_load_permissions()
 
-        if not self._is_admin(ctx.author):
-            await ctx.send(f'You do not have permission to do this.')
+        if not self._is_patrol(ctx.author) and not self._is_admin(ctx.author):
+            await ctx.send(f'You do not have permission to do this (you must be a bot patrol or bot admin).')
+            return
 
-        args = phrase.split(' ')
+        phrase = phrase.lower()
 
-        if not args:
+        if not phrase:
             await ctx.send(f'{COMMAND_SYMBOL}false <phrase>')
             return
 
-        self.permissions["false-triggers"].append(phrase)
         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
+        set_list = set([w.lower() for w in self.permissions["false-triggers"]])
+
+        if phrase in set_list:
+            set_list.remove(phrase)
+            await ctx.send(f"Removed {phrase} from false triggers!")
+        else:
+            set_list.add(phrase)
+            await ctx.send(f"Added {phrase} to false triggers!")
+
+        self.permissions["false-triggers"] = list(set_list)
         await channel.send(json.dumps(self.permissions))
-        await ctx.send(f"Added {phrase} to false triggers!")
 
     @commands.command(
         name='whitelist',
         description="Add a detected swear to the whitelist. These are words that trigger detection but are okay, e.g. 'stringer'",
         brief="Add a detected swear to the swear filter to allow it.",
-        aliases=['false-whitelist'],
+        aliases=['false-whitelist', 'allow'],
         help=f'{COMMAND_SYMBOL}whitelist <word>',
         pass_ctx=True)
     async def whitelist(self, ctx: Context, *, word: str):
         await self.conditional_load_permissions()
 
-        if not self._is_admin(ctx.author):
-            await ctx.send(f'You do not have permission to do this.')
+        if not self._is_patrol(ctx.author) and not self._is_admin(ctx.author):
+            await ctx.send(f'You do not have permission to do this (you must be a bot patrol or bot admin).')
+            return
 
-        args = word.split(' ')
+        word = word.lower()
 
-        if not args:
+        if not word:
             await ctx.send(f'{COMMAND_SYMBOL}whitelist <word>')
             return
 
-        self.permissions["whitelist"].append(word)
         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
+        set_list = set([w.lower() for w in self.permissions["whitelist"]])
+
+        if word in set_list:
+            set_list.remove(word)
+            await ctx.send(f"Removed {word} from allowed words!")
+        else:
+            set_list.add(word)
+            await ctx.send(f"Added {word} to allowed words!")
+
+        self.permissions["whitelist"] = list(set_list)
         await channel.send(json.dumps(self.permissions))
-        await ctx.send(f"Added {word} to whitelist!")
 
     @commands.command(
         name='grant',
