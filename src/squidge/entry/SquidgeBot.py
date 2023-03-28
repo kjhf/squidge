@@ -12,11 +12,13 @@ from src.squidge.cogs.bot_util_commands import BotUtilCommands
 from src.squidge.cogs.wiki_commands import WikiCommands
 from src.squidge.cogs.server_commands import ServerCommands
 from src.squidge.entry.consts import COMMAND_SYMBOL
+from src.squidge.savedata.save_data import SaveData
 
 
 class SquidgeBot(Bot):
 
     def __init__(self):
+        self.save_data = SaveData()
         self.wiki_commands = None
         self.presence = ""
         intents = discord.Intents.default()

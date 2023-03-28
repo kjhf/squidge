@@ -24,6 +24,7 @@ from pywikibot.site._namespace import BuiltinNamespace
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
+from src.squidge.savedata.wiki_permissions import WikiPermissions
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
@@ -37,7 +38,6 @@ class WikiCommands(commands.Cog):
 
     def __init__(self, bot: Bot):
         self.bot = bot
-        self.permissions = {}
         pywikibot.config.usernames['splatoonwiki']['*'] = os.getenv("WIKI_USERNAME")
         pywikibot.config.default_edit_summary = DEFAULT_EDIT
         pywikibot.config.family = 'splatoonwiki'
@@ -74,6 +74,10 @@ class WikiCommands(commands.Cog):
         self.recent_vandals = set()
         super().__init__()
 
+    @property
+    def permissions(self) -> WikiPermissions:
+        return self.bot.save_data.wiki_permissions
+
     async def conditional_load_permissions(self):
         if not self.are_permissions_loaded():
             channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
@@ -104,52 +108,6 @@ class WikiCommands(commands.Cog):
     def are_permissions_loaded(self):
         self.inkipedia.login()  # Do a login here if not already
         return len(self.permissions)
-
-    def _is_editor(self, id: Union[User, Member, str, int]):
-        if self._is_admin(id) or self._is_owner(id):
-            return True
-
-        elif isinstance(id, str):
-            return id in self.permissions["editor"]
-        elif isinstance(id, int):
-            return id.__str__() in self.permissions["editor"]
-        elif isinstance(id, User) or isinstance(id, Member):
-            return id.id.__str__() in self.permissions["editor"]
-        else:
-            raise TypeError(f"_is_editor id unknown type: {type(id)}")
-
-    def _is_admin(self, id):
-        if self._is_owner(id):
-            return True
-
-        elif isinstance(id, str):
-            return id in self.permissions["admin"]
-        elif isinstance(id, int):
-            return id.__str__() in self.permissions["admin"]
-        elif isinstance(id, User) or isinstance(id, Member):
-            return id.id.__str__() in self.permissions["admin"]
-        else:
-            raise TypeError(f"_is_admin id unknown type: {type(id)}")
-
-    def _is_owner(self, id):
-        if isinstance(id, str):
-            return id in self.permissions["owner"]
-        elif isinstance(id, int):
-            return id.__str__() in self.permissions["owner"]
-        elif isinstance(id, User) or isinstance(id, Member):
-            return id.id.__str__() in self.permissions["owner"]
-        else:
-            raise TypeError(f"_is_owner id unknown type: {type(id)}")
-
-    def _is_patrol(self, id):
-        if isinstance(id, str):
-            return id in self.permissions["patrol"]
-        elif isinstance(id, int):
-            return id.__str__() in self.permissions["patrol"]
-        elif isinstance(id, User) or isinstance(id, Member):
-            return id.id.__str__() in self.permissions["patrol"]
-        else:
-            raise TypeError(f"_is_patrol id unknown type: {type(id)}")
 
     async def _get_patrol_pings(self):
         await self.conditional_load_permissions()
