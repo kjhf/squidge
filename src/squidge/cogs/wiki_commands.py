@@ -1,17 +1,16 @@
 """Wiki commands cog."""
 import asyncio
 import datetime
-import json
 import logging
 import os
 import re
 from collections import defaultdict
 from itertools import chain
-from typing import Optional, Union, List
+from typing import Optional, List
 
 import pywikibot.config
 import requests
-from discord import TextChannel, Message, User, Member, Interaction
+from discord import TextChannel, Message, Interaction
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
@@ -23,7 +22,8 @@ from pywikibot.site._namespace import BuiltinNamespace
 
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
-from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot, InterwikiDumps
+from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot
+from src.squidge.savedata.bad_words import BadWords
 from src.squidge.savedata.wiki_permissions import WikiPermissions
 
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
@@ -37,7 +37,9 @@ class WikiCommands(commands.Cog):
     """A grouping of wiki commands."""
 
     def __init__(self, bot: Bot):
-        self.bot = bot
+        from src.squidge.entry.SquidgeBot import SquidgeBot
+        assert isinstance(bot, SquidgeBot)
+        self.bot: SquidgeBot = bot
         pywikibot.config.usernames['splatoonwiki']['*'] = os.getenv("WIKI_USERNAME")
         pywikibot.config.default_edit_summary = DEFAULT_EDIT
         pywikibot.config.family = 'splatoonwiki'
@@ -78,40 +80,16 @@ class WikiCommands(commands.Cog):
     def permissions(self) -> WikiPermissions:
         return self.bot.save_data.wiki_permissions
 
-    async def conditional_load_permissions(self):
-        if not self.are_permissions_loaded():
-            channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-            last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
-            if last_message:
-                permissions_json = json.loads(last_message.content)
-                if "owner" in permissions_json and "admin" in permissions_json and "editor" in permissions_json:
-                    self.permissions["owner"] = permissions_json["owner"]
-                    self.permissions["admin"] = permissions_json["admin"]
-                    self.permissions["editor"] = permissions_json["editor"]
-                    self.permissions["patrol"] = permissions_json.get("patrol", [])
-                    self.permissions["whitelist"] = permissions_json.get("whitelist", [])  # Words that are picked up but shouldn't be, e.g. 'dink'
-                    self.permissions["false-triggers"] = permissions_json.get("false-triggers", [])  # Words that trigger a false detection of another word, e.g. 'button'
-                    author: Optional[User] = last_message.author
-                    if author.id != self.bot.user.id:
-                        # Repost the message so we can edit.
-                        await channel.send(json.dumps(permissions_json))
-                        logging.info("Permissions loaded and resent!")
-                    else:
-                        logging.info("Permissions loaded!")
-                else:
-                    logging.error("WIKI_PERMISSIONS_CHANNEL: loaded json in bad format.")
-                    logging.error(permissions_json)
-                    return
-            else:
-                raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no permissions. Cannot infer owner.")
+    @property
+    def bad_words(self) -> BadWords:
+        return self.bot.save_data.bad_words
 
     def are_permissions_loaded(self):
         self.inkipedia.login()  # Do a login here if not already
-        return len(self.permissions)
+        return len(self.permissions.owner)
 
     async def _get_patrol_pings(self):
-        await self.conditional_load_permissions()
-        return "".join([f"<@!{i}> " for i in self.permissions["patrol"]])
+        return "".join([f"<@!{i}> " for i in self.permissions.patrol])
 
     @commands.command(
         name='move_category',
@@ -127,8 +105,7 @@ class WikiCommands(commands.Cog):
             return
         old_category = args[0]
         new_category = args[1]
-        await self.conditional_load_permissions()
-        if self._is_editor(ctx.author):
+        if self.permissions.is_editor(ctx.author):
             if not old_category.lower().startswith("category"):
                 old_category = "Category:" + old_category
             if not new_category.lower().startswith("category"):
@@ -168,8 +145,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}delete_category <cat>',
         pass_ctx=True)
     async def delete_category(self, ctx: Context, *, category_title: str):
-        await self.conditional_load_permissions()
-        if self._is_admin(ctx.author):
+        if self.permissions.is_admin(ctx.author):
             if not category_title.lower().startswith("category"):
                 category_title = "Category:" + category_title
 
@@ -204,8 +180,6 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}nuke <user>',
         pass_ctx=True)
     async def nuke(self, ctx: Context, *, user: str):
-        await self.conditional_load_permissions()
-
         # Get the user to nuke
         user_to_nuke = pywikibot.User(self.inkipedia, user)
 
@@ -221,9 +195,9 @@ class WikiCommands(commands.Cog):
                 "Not nuking this user as they have established rights. If you really meant to do this, demote them first.")
             return
 
-        if self._is_admin(ctx.author):
+        if self.permissions.is_admin(ctx.author):
             await self._nuke(ctx, user_to_nuke)
-        elif self._is_editor(ctx.author):
+        elif self.permissions.is_editor(ctx.author):
             # We have already checked the user's autoconfirmed status.
             first_edit_ts: pywikibot.Timestamp = user_to_nuke.first_edit[2]
             one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
@@ -240,7 +214,6 @@ class WikiCommands(commands.Cog):
             await ctx.send("You don't have admin permission.")
 
     async def handle_inkipedia_event(self, message: Message) -> Optional[str]:
-        await self.conditional_load_permissions()
         if message.embeds:
             embed = message.embeds[0]
             content = embed.title or embed.description
@@ -269,7 +242,7 @@ class WikiCommands(commands.Cog):
 
                     # In each false trigger, if it's a whole word, remove it
                     # [\s\W\b] is there to match space/punctuation/end of the string
-                    for word in self.permissions["false-triggers"]:
+                    for word in self.bad_words.false_triggers:
                         content = re.sub(r"[\s\W\b](" + word + r")[\s\W\b]", "", content, flags=re.I)
 
                     logging.info(f"handle_inkipedia_event: Querying {content}")
@@ -290,7 +263,7 @@ class WikiCommands(commands.Cog):
                             current_level = "low"
                             for match in profanity_matches:
                                 phrase = match["match"]
-                                if phrase not in self.permissions["whitelist"]:
+                                if phrase not in self.bad_words.whitelist:
                                     matched_phrases.add(phrase)
                                     if match["intensity"] == "high":
                                         current_level = "high"
@@ -322,9 +295,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}false <phrase>',
         pass_ctx=True)
     async def false(self, ctx: Context, *, phrase: str):
-        await self.conditional_load_permissions()
-
-        if not self._is_patrol(ctx.author) and not self._is_admin(ctx.author):
+        if not self.permissions.is_patrol(ctx.author) and not self.permissions.is_admin(ctx.author):
             await ctx.send(f'You do not have permission to do this (you must be a bot patrol or bot admin).')
             return
 
@@ -335,7 +306,7 @@ class WikiCommands(commands.Cog):
             return
 
         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-        set_list = set([w.lower() for w in self.permissions["false-triggers"]])
+        set_list = set([w.lower() for w in self.bad_words.false_triggers])
 
         if phrase in set_list:
             set_list.remove(phrase)
@@ -344,8 +315,8 @@ class WikiCommands(commands.Cog):
             set_list.add(phrase)
             await ctx.send(f"Added {phrase} to false triggers!")
 
-        self.permissions["false-triggers"] = list(set_list)
-        await channel.send(json.dumps(self.permissions))
+        self.bad_words.false_triggers = list(set_list)
+        await self.bot.save_data.save(channel)
 
     @commands.command(
         name='whitelist',
@@ -355,9 +326,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}whitelist <word>',
         pass_ctx=True)
     async def whitelist(self, ctx: Context, *, word: str):
-        await self.conditional_load_permissions()
-
-        if not self._is_patrol(ctx.author) and not self._is_admin(ctx.author):
+        if not self.permissions.is_patrol(ctx.author) and not self.permissions.is_admin(ctx.author):
             await ctx.send(f'You do not have permission to do this (you must be a bot patrol or bot admin).')
             return
 
@@ -368,7 +337,7 @@ class WikiCommands(commands.Cog):
             return
 
         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-        set_list = set([w.lower() for w in self.permissions["whitelist"]])
+        set_list = set([w.lower() for w in self.bad_words.whitelist])
 
         if word in set_list:
             set_list.remove(word)
@@ -377,8 +346,8 @@ class WikiCommands(commands.Cog):
             set_list.add(word)
             await ctx.send(f"Added {word} to allowed words!")
 
-        self.permissions["whitelist"] = list(set_list)
-        await channel.send(json.dumps(self.permissions))
+        self.bad_words.whitelist = list(set_list)
+        await self.bot.save_data.save(channel)
 
     @commands.command(
         name='grant',
@@ -388,8 +357,6 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}grant <role> [other_user]',
         pass_ctx=True)
     async def grant(self, ctx: Context, *, message: str):
-        await self.conditional_load_permissions()
-
         user_id = ctx.author.id.__str__()
         args = message.split(' ')
 
@@ -430,17 +397,18 @@ class WikiCommands(commands.Cog):
                         return
 
         if user_id:
-            if user_id not in self.permissions[role]:
+            role_list = self.permissions.get_role_list(role)
+            if user_id not in role_list:
                 if role == 'patrol':
-                    self.permissions["patrol"].append(user_id)
+                    role_list.append(user_id)
                     channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                    await channel.send(json.dumps(self.permissions))
+                    await self.bot.save_data.save(channel)
                     await ctx.send(f"Added {user_id} to patrol!")
                 else:
-                    if self._is_owner(ctx.author):
-                        self.permissions[role].append(user_id)
+                    if self.permissions.is_owner(ctx.author):
+                        role_list.append(user_id)
                         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                        await channel.send(json.dumps(self.permissions))
+                        await self.bot.save_data.save(channel)
                         await ctx.send(f"Added {user_id} to {role}!")
                     else:
                         await ctx.send(f"You don't have permission to do that.")
@@ -457,8 +425,6 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}deny <role> [other_user]',
         pass_ctx=True)
     async def deny(self, ctx: Context, *, message: str):
-        await self.conditional_load_permissions()
-
         user_id = ctx.author.id.__str__()
         args = message.split(' ')
 
@@ -499,21 +465,22 @@ class WikiCommands(commands.Cog):
                         return
 
         if user_id:
-            if user_id in self.permissions[role]:
+            role_list = self.permissions.get_role_list(role)
+            if user_id in role_list:
                 if role == 'patrol':
-                    self.permissions["patrol"].remove(user_id)
+                    role_list.remove(user_id)
                     channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                    await channel.send(json.dumps(self.permissions))
+                    await self.bot.save_data.save(channel)
                     await ctx.send(f"Removed {user_id} from patrol!")
                 else:
-                    if self._is_owner(ctx.author):
-                        if role == "owner" and len(self.permissions[role]) == 1 and self.permissions[role][0] == user_id:
+                    if self.permissions.is_owner(ctx.author):
+                        if role == "owner" and len(role_list) == 1 and role_list[0] == user_id:
                             await ctx.send(f"You may not remove yourself as the only owner. Add someone else first.")
                             return
 
-                        self.permissions[role].remove(user_id)
+                        role_list.remove(user_id)
                         channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                        await channel.send(json.dumps(self.permissions))
+                        await self.bot.save_data.save(channel)
                         await ctx.send(f"Removed {user_id} from {role}!")
                     else:
                         await ctx.send(f"You don't have permission to do that.")
@@ -562,8 +529,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}autodel [cat=Pages pending deletion]',
         pass_ctx=True)
     async def auto_delete(self, ctx: Context, *, category_title: str = "Pages pending deletion"):
-        await self.conditional_load_permissions()
-        if self._is_admin(ctx.author):
+        if self.permissions.is_admin(ctx.author):
             if not category_title.lower().startswith("category"):
                 category_title = "Category:" + category_title
 
@@ -719,9 +685,7 @@ class WikiCommands(commands.Cog):
         construction_re = re.compile(re.escape('{{construction}}'), re.IGNORECASE)
         size_threshold = 4000
 
-        await self.conditional_load_permissions()
-        if self._is_editor(ctx.author):
-
+        if self.permissions.is_editor(ctx.author):
             if not category_title.lower().startswith("category"):
                 category_title = "Category:" + category_title
 
@@ -756,8 +720,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}interwiki',
         pass_ctx=True)
     async def perform_interwiki(self, ctx: Context):
-        await self.conditional_load_permissions()
-        if self._is_editor(ctx.author):
+        if self.permissions.is_editor(ctx.author):
             await ctx.send("Beginning interwiki.")
             interwiki_conf = InterwikiBotConfig()
             # tempting to run in async mode, but we control the event loop, so don't do that
@@ -794,8 +757,7 @@ class WikiCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}iotm',
         pass_ctx=True)
     async def perform_iotm(self, ctx: Context):
-        await self.conditional_load_permissions()
-        if self._is_admin(ctx.author):
+        if self.permissions.is_admin(ctx.author):
             await ctx.send("Beginning Inkipedian of the Month command.")
             edited_page = await self._do_iotm()
             await ctx.send(f"Done. Please see {edited_page.full_url()}")
@@ -864,7 +826,8 @@ class WikiCommands(commands.Cog):
 
             for contrib in ucgen:
                 bytes_changed = abs(int(contrib['sizediff']))
-                user_scores[user] += (bytes_changed * ns_to_score.get(int(contrib['ns']), 0))
+                # 5,000 bytes maximum per edit to prevent huge score increase for manual merge/copy-paste
+                user_scores[user] += (min(bytes_changed, 5000) * ns_to_score.get(int(contrib['ns']), 0))
 
         # Post results to the page
         best = [pair for pair in sorted(user_scores.items(), key=lambda kv: kv[1], reverse=True) if pair[1] > 0]
@@ -872,11 +835,10 @@ class WikiCommands(commands.Cog):
         iotm_page.text = """
 {| class="wikitable"
 ! User
-! Score
-|-
-"""
-        for kv in best:
-            iotm_page.text += f"\n| {kv[0]}\n|{kv[1]}\n|-"
+! Weighted score
+|-"""
+        for (user, score) in best:
+            iotm_page.text += f"\n| [[Special:Contributions/{user}|{user}]]\n|{score}\n|-"
 
         iotm_page.text += "\n|}"
         iotm_page.save(summary=DEFAULT_EDIT + f" Updating IotM scores since {str(end)}", minor=True, botflag=True, force=True)
@@ -890,9 +852,8 @@ class WikiCommands(commands.Cog):
             return None
 
     async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
-        await self.conditional_load_permissions()
         user = interaction.user
-        if self._is_editor(user):
+        if self.permissions.is_editor(user):
             switch = {
                 'user': BuiltinNamespace.USER,
                 'user talk': BuiltinNamespace.USER_TALK,

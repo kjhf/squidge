@@ -1,16 +1,18 @@
 import asyncio
+import json
 import logging
 import os
 import sys
-from typing import List
+from typing import List, Optional
 
 import discord
+from discord import TextChannel, Message, User
 from discord.ext import commands
 from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRequiredArgument, Context
 
 from src.squidge.cogs.bot_util_commands import BotUtilCommands
-from src.squidge.cogs.wiki_commands import WikiCommands
 from src.squidge.cogs.server_commands import ServerCommands
+from src.squidge.cogs.wiki_commands import WikiCommands
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.savedata.save_data import SaveData
 
@@ -18,6 +20,7 @@ from src.squidge.savedata.save_data import SaveData
 class SquidgeBot(Bot):
 
     def __init__(self):
+        self.ready = False
         self.save_data = SaveData()
         self.wiki_commands = None
         self.presence = ""
@@ -82,6 +85,9 @@ class SquidgeBot(Bot):
         if message.author == self.user:
             return
 
+        if not self.ready:
+            return
+
         # If it's the WikiNotifier bot, do stuff.
         # else, don't respond to bot messages.
         if message.author.bot:
@@ -104,6 +110,8 @@ class SquidgeBot(Bot):
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name}, id {self.user.id}')
         await self.change_presence(activity=discord.Game(name=self.presence))
+        await self.load_save_data()
+        self.ready = True
 
     def do_the_thing(self):
         loop = asyncio.get_event_loop()
@@ -112,3 +120,19 @@ class SquidgeBot(Bot):
                 self.start(os.getenv("DISCORD_BOT_TOKEN"))
             )
         )
+
+    async def load_save_data(self):
+        channel: TextChannel = self.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
+        last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
+        if last_message:
+            permissions_json = json.loads(last_message.content)
+            self.save_data = SaveData.from_json(permissions_json)
+            author: Optional[User] = last_message.author
+            if author.id != self.user.id:
+                # Repost the message so we can edit.
+                await channel.send(json.dumps(permissions_json))
+                logging.info("Permissions loaded and resent!")
+            else:
+                logging.info("Permissions loaded!")
+        else:
+            raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no permissions. Cannot infer owner.")

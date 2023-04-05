@@ -10,11 +10,16 @@ class NIWAPermissions:
     @staticmethod
     def from_json(obj: Union[str, dict]):
         if isinstance(obj, str):
-            return NIWAPermissions(**json.loads(obj))
+            json_ob = json.loads(obj)
         elif isinstance(obj, dict):
-            return NIWAPermissions(**obj)
+            json_ob = obj
         else:
-            assert False
+            assert False, f"NIWAPermissions: Unknown type passed to from_json: {type(obj)}"
 
-    def to_json(self):
-        return json.dumps(self.__dict__)
+        assert isinstance(json_ob, dict)
+        return NIWAPermissions(
+            wob_maintainer=json_ob.get("wob_maintainer", [])
+        )
+
+    def as_dict(self):
+        return self.__dict__

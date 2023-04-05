@@ -14,15 +14,24 @@ class WikiPermissions:
 
     @staticmethod
     def from_json(obj: Union[str, dict]):
-        if isinstance(obj, str):
-            return WikiPermissions(**json.loads(obj))
-        elif isinstance(obj, dict):
-            return WikiPermissions(**obj)
-        else:
-            assert False
 
-    def to_json(self):
-        return json.dumps(self.__dict__)
+        if isinstance(obj, str):
+            json_ob = json.loads(obj)
+        elif isinstance(obj, dict):
+            json_ob = obj
+        else:
+            assert False, f"WikiPermissions: Unknown type passed to from_json: {type(obj)}"
+
+        assert isinstance(json_ob, dict)
+        return WikiPermissions(
+            owner=json_ob.get("owner", []),
+            admin=json_ob.get("admin", []),
+            editor=json_ob.get("editor", []),
+            patrol=json_ob.get("patrol", [])
+        )
+
+    def as_dict(self):
+        return self.__dict__
 
     def is_editor(self, id: Union[User, Member, str, int]):
         if self.is_admin(id) or self.is_owner(id):
@@ -69,3 +78,6 @@ class WikiPermissions:
             return id.id.__str__() in self.patrol
         else:
             raise TypeError(f"_is_patrol id unknown type: {type(id)}")
+
+    def get_role_list(self, role: str) -> list[str]:
+        return getattr(self, role)

@@ -11,11 +11,17 @@ class BadWords:
     @staticmethod
     def from_json(obj: Union[str, dict]):
         if isinstance(obj, str):
-            return BadWords(**json.loads(obj))
+            json_ob = json.loads(obj)
         elif isinstance(obj, dict):
-            return BadWords(**obj)
+            json_ob = obj
         else:
-            assert False
+            assert False, f"BadWords: Unknown type passed to from_json: {type(obj)}"
 
-    def to_json(self):
-        return json.dumps(self.__dict__)
+        assert isinstance(json_ob, dict)
+        return BadWords(
+            whitelist=json_ob.get("whitelist", []),
+            false_triggers=json_ob.get("false_triggers", [])
+        )
+
+    def as_dict(self):
+        return self.__dict__
