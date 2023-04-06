@@ -40,10 +40,18 @@ class WikiCommands(commands.Cog):
         from src.squidge.entry.SquidgeBot import SquidgeBot
         assert isinstance(bot, SquidgeBot)
         self.bot: SquidgeBot = bot
-        pywikibot.config.usernames['splatoonwiki']['*'] = os.getenv("WIKI_USERNAME")
+        # the docs say you can use a star but interwiki determined that is... a lie
+        pywikibot.config.usernames['splatoonwiki']['en'] = os.getenv("WIKI_USERNAME")
+        pywikibot.config.usernames['splatoonwiki']['fr'] = os.getenv("WIKI_USERNAME")
+        pywikibot.config.usernames['splatoonwiki']['es'] = os.getenv("WIKI_USERNAME")
         pywikibot.config.default_edit_summary = DEFAULT_EDIT
         pywikibot.config.family = 'splatoonwiki'
         pywikibot.config.mylang = 'en'
+        pywikibot.config.interwiki_backlink = True
+        pywikibot.config.colorized_output = True
+        pywikibot.config.interwiki_shownew = True
+
+        self.sites: dict[str, APISite] = {}
 
         # Find the password file and family file
         file = ".pwd"
@@ -62,19 +70,28 @@ class WikiCommands(commands.Cog):
                 pywikibot.config.family_files['splatoonwiki'] = file
                 # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
                 # noinspection PyTypeChecker
-                self.inkipedia: APISite = Site(code='en', fam='splatoonwiki')
+                self.sites['en'] = Site(code='en', fam='splatoonwiki')
+                # noinspection PyTypeChecker
+                self.sites['fr'] = Site(code='fr', fam='splatoonwiki')
+                # noinspection PyTypeChecker
+                self.sites['es'] = Site(code='es', fam='splatoonwiki')
                 break
             else:
                 file = "../" + file
         else:
-            logging.warning("Family file not found. Interwiki commands will not work.")
+            logging.critical("***Family file not found. Interwiki commands will not work.***")
             # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
             # noinspection PyTypeChecker
-            self.inkipedia: APISite = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
+            self.sites['en'] = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
 
         pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
         self.recent_vandals = set()
         super().__init__()
+
+    @property
+    def inkipedia(self):
+        """Shortcut to get the English Inkipedia site"""
+        return self.sites['en']
 
     @property
     def permissions(self) -> WikiPermissions:
@@ -84,9 +101,9 @@ class WikiCommands(commands.Cog):
     def bad_words(self) -> BadWords:
         return self.bot.save_data.bad_words
 
-    def are_permissions_loaded(self):
-        self.inkipedia.login()  # Do a login here if not already
-        return len(self.permissions.owner)
+    def login_to_sites(self):
+        for site in self.sites.values():
+            site.login()
 
     async def _get_patrol_pings(self):
         return "".join([f"<@!{i}> " for i in self.permissions.patrol])
@@ -721,32 +738,41 @@ class WikiCommands(commands.Cog):
         pass_ctx=True)
     async def perform_interwiki(self, ctx: Context):
         if self.permissions.is_editor(ctx.author):
-            await ctx.send("Beginning interwiki.")
+            await ctx.send("Configuring interwiki...")
             interwiki_conf = InterwikiBotConfig()
             # tempting to run in async mode, but we control the event loop, so don't do that
             # interwiki_conf.readOptions("-restore all")
 
             # Do not use additional summary with autonomous mode
+            # (we don't care for the i18n submodule)
             interwiki_conf.summary = EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " interwiki update"
             interwiki_conf.auto = True
-            interwiki_conf.minsubjects = 10  # don't consume the whole wiki in one go -- 100 is way too much
+            interwiki_conf.autonomous = True
+            interwiki_conf.always = True
+            interwiki_conf.minsubjects = 10  # 100 by default. Don't consume the whole wiki in one go!!
             interwiki_conf.maxquerysize = 25  # was 50
-            site = self.inkipedia
+            interwiki_conf.nobackonly = False
+
+            # Refresh our logins now
+            self.login_to_sites()
 
             # ensure that we don't try to change main page
-            main_page_name = site.siteinfo['mainpage']
-            interwiki_conf.skip.add(pywikibot.Page(site, main_page_name))
-            bot = InterwikiBot(interwiki_conf)
-            bot.site = site
-            bot.setPageGenerator(iter(pagegenerators.AllpagesPageGenerator(includeredirects=False)))
+            for (code, site) in self.sites.items():
+                interwiki_conf.skip.clear()
+                main_page_name = site.siteinfo['mainpage']
+                interwiki_conf.skip.add(pywikibot.Page(site, main_page_name))
+                bot = InterwikiBot(interwiki_conf)
+                bot.site = site
+                bot.setPageGenerator(iter(pagegenerators.AllpagesPageGenerator(includeredirects=False)))
 
-            try:
-                await bot.run()
-            except Exception as err:
-                pywikibot.exception()
-                await ctx.send(f'Interwiki terminated early: {err[:2000]}')
-            finally:
-                await ctx.send(f'Interwiki finished.')
+                try:
+                    await ctx.send(f"Running interwiki for {code}...")
+                    await bot.run()
+                except Exception as err:
+                    pywikibot.exception()
+                    await ctx.send(f"Interwiki terminated early: {err[:2000]}")
+                finally:
+                    await ctx.send(f"...Interwiki finished for {code}.")
         else:
             await ctx.send("You don't have editor permission.")
 
