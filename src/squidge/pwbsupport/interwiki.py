@@ -1425,8 +1425,9 @@ class Subject(interwiki_graph.Subject):
         if not self.isDone():
             raise Exception('Bugcheck: finish called before done')
 
-        if not self.workonme or not self.origin:
-            return
+        # Slate: rem
+        # if not self.workonme or not self.origin:
+        #     return
 
         if self.origin.isRedirectPage() or self.origin.isCategoryRedirect():
             return
@@ -1491,8 +1492,9 @@ class Subject(interwiki_graph.Subject):
                             updated.append(site)
                         if site != lclSite:
                             frgnSiteDone = True
-                    except SaveError:
-                        pass
+                    except SaveError as err:
+                        # Slate: Added some debug here
+                        pywikibot.exception(err)
                     except GiveUpOnPage:
                         break
 
@@ -1517,10 +1519,18 @@ class Subject(interwiki_graph.Subject):
                     try:
                         if self.replaceLinks(new[site], new):
                             updated.append(site)
-                    except (NoUsernameError, SaveError):
-                        pass
+                    except (NoUsernameError, SaveError) as err:
+                        # Slate: Added some debug here
+                        pywikibot.exception(err)
                     except GiveUpOnPage:
                         break
+                # Slate: Added some debug here
+                else:
+                    pywikibot.warning(f'process_limit_two skipped, '
+                                      f'{removing=} {modifying=} {old=} {self.conf.needlimit=}'
+                                      f'{site.family.name in config.usernames=}, '
+                                      f'{site.code in config.usernames.get(site.family.name, [])=}, '
+                                      f'{not site.has_data_repository=}')
 
     def process_unlimited(self, new, updated):
         """Post process unlimited."""
@@ -1534,10 +1544,16 @@ class Subject(interwiki_graph.Subject):
                     if self.replaceLinks(page, new):
                         # Page was changed
                         updated.append(site)
-                except SaveError:
-                    pass
+                except SaveError as err:
+                    # Slate: Added some debug here
+                    pywikibot.exception(err)
                 except GiveUpOnPage:
                     break
+            # Slate: Added some debug here
+            else:
+                pywikibot.error(f'process_unlimited skipped, {site.family.name in config.usernames=}, '
+                                f'{site.code in config.usernames.get(site.family.name, [])=}, '
+                                f'{not site.has_data_repository=}')
 
     def replaceLinks(self, page, newPages) -> bool:
         """Return True if saving was successful."""
@@ -2110,8 +2126,19 @@ def compareLanguages(old, new, insite, summary):
                       'modifying': ', '.join(fmt(new, x) for x in modifying),
                       'from': '' if not useFrom else old[modifying[0]]}
 
-        mcomment += i18n.twtranslate(insite, commentname, changes)
-        mods = i18n.twtranslate('en', commentname, en_changes)
+        # Slate: Deal with pywikibot.exceptions.TranslationError
+        # by specifying the comment as the fallback
+        if not i18n.messages_available():
+            mcomment += commentname % changes
+            mods = commentname % en_changes
+        else:
+            try:
+                mcomment += i18n.twtranslate(insite, commentname, changes, fallback_prompt=commentname)
+                mods = i18n.twtranslate('en', commentname, en_changes, fallback_prompt=commentname)
+            except pywikibot.exceptions.TranslationError as err:
+                mcomment += commentname % changes
+                mods = commentname % en_changes
+                pywikibot.warning(err)
 
     return mods, mcomment, adding, removing, modifying
 
