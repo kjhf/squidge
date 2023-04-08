@@ -6,7 +6,7 @@ import os
 import re
 from collections import defaultdict
 from itertools import chain
-from typing import Optional, List
+from typing import Optional, List, Generator
 
 import pywikibot.config
 import requests
@@ -22,6 +22,7 @@ from pywikibot.site._namespace import BuiltinNamespace
 
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
+from src.squidge.pwbsupport.helpers import get_all_users_generator
 from src.squidge.pwbsupport.interwiki import InterwikiBotConfig, InterwikiBot
 from src.squidge.savedata.bad_words import BadWords
 from src.squidge.savedata.wiki_permissions import WikiPermissions
@@ -123,6 +124,7 @@ class WikiCommands(commands.Cog):
         old_category = args[0]
         new_category = args[1]
         if self.permissions.is_editor(ctx.author):
+            self.login_to_sites()
             if not old_category.lower().startswith("category"):
                 old_category = "Category:" + old_category
             if not new_category.lower().startswith("category"):
@@ -163,6 +165,7 @@ class WikiCommands(commands.Cog):
         pass_ctx=True)
     async def delete_category(self, ctx: Context, *, category_title: str):
         if self.permissions.is_admin(ctx.author):
+            self.login_to_sites()
             if not category_title.lower().startswith("category"):
                 category_title = "Category:" + category_title
 
@@ -198,6 +201,7 @@ class WikiCommands(commands.Cog):
         pass_ctx=True)
     async def nuke(self, ctx: Context, *, user: str):
         # Get the user to nuke
+        self.login_to_sites()
         user_to_nuke = pywikibot.User(self.inkipedia, user)
 
         if not user_to_nuke or not user_to_nuke.isRegistered(force=True):
@@ -563,6 +567,7 @@ class WikiCommands(commands.Cog):
             await ctx.send("You don't have admin permission.")
 
     async def run_auto_delete(self, cat_page, category_title, author):
+        self.login_to_sites()
         auth_by = EDIT_WITH_AUTHORIZED_BY + author + " "
         orphaned_summary = auth_by + "Deleting orphaned talk page in [[:" + category_title + "]]"
         broken_redirect_summary = auth_by + "Deleting broken redirect page in [[:" + category_title + "]]"
@@ -703,6 +708,7 @@ class WikiCommands(commands.Cog):
         size_threshold = 4000
 
         if self.permissions.is_editor(ctx.author):
+            self.login_to_sites()
             if not category_title.lower().startswith("category"):
                 category_title = "Category:" + category_title
 
@@ -786,9 +792,12 @@ class WikiCommands(commands.Cog):
         if self.permissions.is_admin(ctx.author):
             await ctx.send("Beginning Inkipedian of the Month command.")
             edited_page = await self._do_iotm()
-            await ctx.send(f"Done. Please see {edited_page.full_url()}")
+            url = edited_page.site.base_url(edited_page.site.articlepath.format(edited_page.title(underscore=True)))
+            await ctx.send(f"Done. Please see {url}")
 
     async def _do_iotm(self):
+        self.login_to_sites()
+
         # Define namespace weighting
         ns_to_score = {
             BuiltinNamespace.CATEGORY: 1,
@@ -823,18 +832,23 @@ class WikiCommands(commands.Cog):
         if start and end:
             self.inkipedia.assert_valid_iter_params('usercontribs', start, end, False)
 
-        users = set()
-        for user in self.inkipedia.allusers():
-            count = user["editcount"]
-            if count and int(count):
-                username = user["name"]
-                users.add(username)
-                await asyncio.sleep(0.001)  # yield
+        # Keyed by username, with the user's editcount, groups, and registration date
+        users_info = {}
+        au_gen: Generator[dict] = get_all_users_generator(
+            self.inkipedia,
+            auexcludegroup="bot",
+            auprop="groups|registration",
+            auwitheditsonly=True,
+            auactiveusers=True)
+
+        for user in au_gen:
+            username: str = user["name"]
+            users_info[username] = user
+            await asyncio.sleep(0.001)  # yield
 
         # Score each one
-        logging.info(f"All users received, {len(users)} in the set.")
-        user_scores = defaultdict(int)
-        for user in users:
+        logging.info(f"All users received, {len(users_info)} in the set.")
+        for username in users_info:
             await asyncio.sleep(0.001)  # yield
             # Used self.inkipedia.usercontribs(user=user, start=start, end=end) but this does not return the contrib sizediff that we need ._.
             ucgen = self.inkipedia._generator(api.ListGenerator,
@@ -843,43 +857,54 @@ class WikiCommands(commands.Cog):
                                               namespaces=None,
                                               total=None,
                                               uctoponly=False)
-            ucgen.request['ucuser'] = user
+            ucgen.request['ucuser'] = username
             ucgen.request['ucstart'] = str(start)
             ucgen.request['ucend'] = str(end)
             option_set = api.OptionSet(self.inkipedia, 'usercontribs', 'show')
             option_set['minor'] = None
             ucgen.request['ucshow'] = option_set
 
+            user_score = 0
             for contrib in ucgen:
                 bytes_changed = abs(int(contrib['sizediff']))
                 # 5,000 bytes maximum per edit to prevent huge score increase for manual merge/copy-paste
-                user_scores[user] += (min(bytes_changed, 5000) * ns_to_score.get(int(contrib['ns']), 0))
+                user_score += (min(bytes_changed, 5000) * ns_to_score.get(int(contrib['ns']), 0))
+            users_info[username]["score"] = user_score
 
         # Post results to the page
-        best = [pair for pair in sorted(user_scores.items(), key=lambda kv: kv[1], reverse=True) if pair[1] > 0]
+        # For rights level: User / autopatrolled / Patroller / Admin / Bcrat
+        best = [pair for pair in sorted(users_info.items(), key=lambda kv: kv[1]["score"], reverse=True) if pair[1]["score"] > 0]
         iotm_page = Page(self.inkipedia, self.inkipedia.username() + "/iotm", ns=BuiltinNamespace.USER)
         iotm_page.text = """
-{| class="wikitable"
+{| class="sortable wikitable"
 ! User
 ! Weighted score
+! Highest group
+! Registration
 |-"""
-        for (user, score) in best:
-            iotm_page.text += f"\n| [[Special:Contributions/{user}|{user}]]\n|{score}\n|-"
+
+        for (username, user_info_dict) in best:
+            user_groups = user_info_dict["groups"]
+            rights_level = ("B'crat" if "bureaucrat" in user_groups else
+                            "Admin" if "sysop" in user_groups else
+                            "InterfaceAdmin" if "interface-admin" in user_groups else
+                            "Patroller" if "patrol" in user_groups else
+                            "Auto-patrolled" if "autopatrol" in user_groups else
+                            "Auto-confirmed" if "autoconfirmed" in user_groups else
+                            "User" if "user" in user_groups else "?")
+            if "affiliate" in user_groups:
+                rights_level += " + Affiliate"
+
+            iotm_page.text += f"\n| [[Special:Contributions/{username}|{username}]]\n|{user_info_dict['score']}\n|{rights_level}\n|{user_info_dict['registration']}\n|-"
 
         iotm_page.text += "\n|}"
         iotm_page.save(summary=DEFAULT_EDIT + f" Updating IotM scores since {str(end)}", minor=True, botflag=True, force=True)
         return iotm_page
 
-    @staticmethod
-    def _try_get_user_from_revision(revision):
-        try:
-            return revision.userName()
-        except PageRelatedError:
-            return None
-
     async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
         user = interaction.user
         if self.permissions.is_editor(user):
+            self.login_to_sites()
             switch = {
                 'user': BuiltinNamespace.USER,
                 'user talk': BuiltinNamespace.USER_TALK,
