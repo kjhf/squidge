@@ -57,6 +57,9 @@ class SquidgeBot(Bot):
         from src.squidge.cogs.wiki_slash_commands import WikiSlashCommands
         _ = await self.try_add_cog(WikiSlashCommands)
 
+        from src.squidge.cogs.niwa_link import NIWALinkCommands
+        _ = await self.try_add_cog(NIWALinkCommands)
+
         # Sync slash commands
         assert self.tree.get_commands(), "No commands were registered"
         for guild in SquidgeBot.squidge_guilds():
