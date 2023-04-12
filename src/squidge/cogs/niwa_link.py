@@ -54,7 +54,7 @@ class NIWALinkCommands(commands.Cog):
     def permissions(self) -> NIWAPermissions:
         return self.bot.save_data.niwa_permissions
 
-    @app_commands.describe(name="The wiki's full display name")
+    @app_commands.describe(name="The wiki's full display name. If it includes spaces you may use _ or quotes around it \"full name\"")
     @app_commands.describe(homepage="The wiki's homepage URL, e.g. https://examplewiki.com/wiki/Main_Page")
     @app_commands.describe(lang='The wiki code / MediaWiki language, e.g. en.')
     @app_commands.describe(api="Full URL to the wiki's api file, e.g. https://examplewiki.com/w/api.php")
@@ -70,12 +70,13 @@ class NIWALinkCommands(commands.Cog):
     async def wl_add(self, ctx: Context, name: str, homepage: str, lang: str, api: str):
         await self._defer_if_interaction(ctx)
         message = ""
+        name = name.replace('_', ' ')
 
         if not self.wl_wikis:
             message += "⚠ WARNING: You are adding to a currently empty list. Use wl_pull.\n"
 
         if any(wiki["name"] == name for wiki in self.wl_wikis):
-            message += "❌ WARNING: Your new name is non-unique.\n"
+            message += f"❌ WARNING: Your new name={name} is non-unique.\n"
 
         self.wl_wikis.append(
             WLWiki(name=name, homepage=homepage, lang=lang, api=api,
@@ -96,6 +97,7 @@ class NIWALinkCommands(commands.Cog):
     async def wl_option(self, ctx: Context, name: str, option: str, *, values: str):
         await self._defer_if_interaction(ctx)
         message = ""
+        name = name.replace('_', ' ')
 
         if not self.wl_wikis:
             message += "❌ ERROR: Empty list. Use wl_pull.\n"
@@ -103,7 +105,7 @@ class NIWALinkCommands(commands.Cog):
             wiki = next((wiki for wiki in self.wl_wikis if wiki["name"].lower() == name.lower()), None)
             if wiki:
                 option_lower = option.lower()
-                new_values = list(dict.fromkeys(values.replace(',', '').split(' ')))
+                new_values = [val.trim("\'\" ") for val in dict.fromkeys(values.split(','))]
                 if option_lower == "companies":
                     wiki["companies"] = new_values
                     message += "✅ Added companies successfully. Use wl_dump when you're done."
@@ -137,6 +139,7 @@ class NIWALinkCommands(commands.Cog):
     async def wob_add(self, ctx: Context, key: str, name: str, url: str, article_url: str, *, aliases: str):
         await self._defer_if_interaction(ctx)
         message = ""
+        name = name.replace('_', ' ')
 
         if not self.wob_wikis:
             message += "⚠ WARNING: You are adding to a currently empty list. Use wob_pull.\n"
@@ -145,6 +148,7 @@ class NIWALinkCommands(commands.Cog):
             message += "❌ WARNING: Your new key is non-unique.\n"
 
         new_aliases = list(dict.fromkeys(aliases.replace(',', '').split(' ')))
+
         if any(len(set(wiki["aliases"]) & set(new_aliases)) > 0 for wiki in self.wob_wikis):
             message += "❌ WARNING: Your new alias(es) are non-unique.\n"
 
