@@ -1,7 +1,7 @@
 """Nintendo Independent Wiki Alliance (NIWA) link cog."""
 import json
 from io import BytesIO
-from typing import TypedDict
+from typing import TypedDict, Optional
 
 import discord
 import requests
@@ -13,10 +13,25 @@ from src.squidge.discordsupport.pagination_view import PaginationView
 from src.squidge.entry.SquidgeBot import SquidgeBot
 from src.squidge.savedata.niwa_permissions import NIWAPermissions
 
-WIKIS_JSON_LINK = "https://raw.githubusercontent.com/invalidCards/WikiOperatingBuddy/master/_wikis.json"
+WOB_JSON_LINK = "https://raw.githubusercontent.com/invalidCards/WikiOperatingBuddy/master/_wikis.json"
+WIKI_LOOKUP_JSON_LINK = "https://raw.githubusercontent.com/GameWikis/WikiLookup/master/WikiLookup.json"
+
+
+class WLWiki(TypedDict):
+    """Wiki Lookup Wiki"""
+    name: str
+    homepage: str
+    lang: str
+    api: str
+    companies: Optional[list[str]]
+    games: Optional[list[str]]
+    genres: Optional[list[str]]
+    series: Optional[list[str]]
+    systems: Optional[list[str]]
 
 
 class WOBWiki(TypedDict):
+    """Wiki Operating Buddy Wiki"""
     key: str
     name: str
     url: str
@@ -26,18 +41,91 @@ class WOBWiki(TypedDict):
 
 
 class NIWALinkCommands(commands.Cog):
-    wikis: list[WOBWiki]
+    wob_wikis: list[WOBWiki]
+    wl_wikis: list[WLWiki]
 
     def __init__(self, bot):
         self.bot = bot
-        self.wikis = []
+        self.wob_wikis = []
+        self.wl_wikis = []
         super().__init__()
 
     @property
     def permissions(self) -> NIWAPermissions:
         return self.bot.save_data.niwa_permissions
 
-    @app_commands.describe(key='Key to file the wiki under. This must be unique across all wikis that WOB supports.')
+    @app_commands.describe(name="The wiki's full display name")
+    @app_commands.describe(homepage="The wiki's homepage URL, e.g. https://examplewiki.com/wiki/Main_Page")
+    @app_commands.describe(lang='The wiki code / MediaWiki language, e.g. en.')
+    @app_commands.describe(api="Full URL to the wiki's api file, e.g. https://examplewiki.com/w/api.php")
+    # @app_commands.describe(companies="Optional: the companies covered by the wiki.")
+    # @app_commands.describe(games="Optional: the games covered by the wiki.")
+    # @app_commands.describe(genres="Optional: the genres covered by the wiki.")
+    # @app_commands.describe(series="Optional: the series covered by the wiki.")
+    # @app_commands.describe(systems="Optional: the systems covered by the wiki.")
+    @app_commands.guilds(*SquidgeBot.squidge_guilds())
+    @commands.hybrid_command(
+        name='wl_add',
+        description="Add a wiki to the local configured list.")
+    async def wl_add(self, ctx: Context, name: str, homepage: str, lang: str, api: str):
+        await self._defer_if_interaction(ctx)
+        message = ""
+
+        if not self.wl_wikis:
+            message += "⚠ WARNING: You are adding to a currently empty list. Use wl_pull.\n"
+
+        if any(wiki["name"] == name for wiki in self.wl_wikis):
+            message += "❌ WARNING: Your new name is non-unique.\n"
+
+        self.wl_wikis.append(
+            WLWiki(name=name, homepage=homepage, lang=lang, api=api,
+                   companies=[], games=[], genres=[], series=[], systems=[])
+        )
+        message += \
+            "✅ Added successfully. Use `wl_option " + name + " parameter value1 value2...` to add additional optional fields. " \
+            "Use wl_dump when you're done."
+        await self._send_or_edit(ctx, message)
+
+    @app_commands.describe(name="The wiki's name to amend")
+    @app_commands.describe(option="The option to add. Can be companies, games, genres, series, systems.")
+    @app_commands.describe(values='The things to add as a space (and optional comma) separated list.')
+    @app_commands.guilds(*SquidgeBot.squidge_guilds())
+    @commands.hybrid_command(
+        name='wl_option',
+        description="Add optionals to an added wiki")
+    async def wl_option(self, ctx: Context, name: str, option: str, *, values: str):
+        await self._defer_if_interaction(ctx)
+        message = ""
+
+        if not self.wl_wikis:
+            message += "❌ ERROR: Empty list. Use wl_pull.\n"
+        else:
+            wiki = next((wiki for wiki in self.wl_wikis if wiki["name"].lower() == name.lower()), None)
+            if wiki:
+                option_lower = option.lower()
+                new_values = list(dict.fromkeys(values.replace(',', '').split(' ')))
+                if option_lower == "companies":
+                    wiki["companies"] = new_values
+                    message += "✅ Added companies successfully. Use wl_dump when you're done."
+                elif option_lower == "games":
+                    wiki["games"] = new_values
+                    message += "✅ Added games successfully. Use wl_dump when you're done."
+                elif option_lower == "genres":
+                    wiki["genres"] = new_values
+                    message += "✅ Added genres successfully. Use wl_dump when you're done."
+                elif option_lower == "series":
+                    wiki["series"] = new_values
+                    message += "✅ Added series successfully. Use wl_dump when you're done."
+                elif option_lower == "systems":
+                    wiki["systems"] = new_values
+                    message += "✅ Added systems successfully. Use wl_dump when you're done."
+                else:
+                    message += "❌ ERROR: The option you specified is not recognised. Use: `companies`, `games`, `genres`, `series`, `systems`\n"
+            else:
+                message += "❌ ERROR: Wiki not found with that name.`\n"
+        await self._send_or_edit(ctx, message)
+
+    @app_commands.describe(key='Key to file the wiki under. This must be unique across all wikis that WikiLookup supports.')
     @app_commands.describe(name="The wiki's full display name")
     @app_commands.describe(url="The wiki's base url for the API, e.g. https://examplewiki.com/w")
     @app_commands.describe(article_url="The wiki's base article url for pages, e.g. https://examplewiki.com/wiki")
@@ -50,21 +138,39 @@ class NIWALinkCommands(commands.Cog):
         await self._defer_if_interaction(ctx)
         message = ""
 
-        if not self.wikis:
-            message = "⚠ WARNING: You are adding to a currently empty list. Use wob_pull.\n"
+        if not self.wob_wikis:
+            message += "⚠ WARNING: You are adding to a currently empty list. Use wob_pull.\n"
 
-        if any(wiki["key"] == key for wiki in self.wikis):
-            message = "❌ WARNING: Your new key is non-unique.\n"
+        if any(wiki["key"] == key for wiki in self.wob_wikis):
+            message += "❌ WARNING: Your new key is non-unique.\n"
 
-        new_aliases = set(aliases.replace(',', '').split(' '))
-        if any(len(set(wiki["aliases"]) & new_aliases) > 0 for wiki in self.wikis):
-            message = "❌ WARNING: Your new alias(es) are non-unique.\n"
+        new_aliases = list(dict.fromkeys(aliases.replace(',', '').split(' ')))
+        if any(len(set(wiki["aliases"]) & set(new_aliases)) > 0 for wiki in self.wob_wikis):
+            message += "❌ WARNING: Your new alias(es) are non-unique.\n"
 
-        self.wikis.append(
-            WOBWiki(key=key, name=name, url=url, articleUrl=article_url, aliases=list(new_aliases), setOnly=[])
+        self.wob_wikis.append(
+            WOBWiki(key=key, name=name, url=url, articleUrl=article_url, aliases=new_aliases, setOnly=[])
         )
-        message += "✅ Added successfully. Use wob_dump when you're done."
+        message += "✅ Added successfully. Use wl_pull when you're done."
         await self._send_or_edit(ctx, message)
+
+    @app_commands.guilds(*SquidgeBot.squidge_guilds())
+    @commands.hybrid_command(
+        name='wl_dump',
+        description="Dump the local Wiki Lookup configured wikis to JSON")
+    async def wl_dump(self, ctx: Context):
+        await self._defer_if_interaction(ctx)
+        message = ""
+
+        if self.wl_wikis:
+            bytes_buffer = BytesIO(json.dumps(self.wl_wikis).encode())
+            if ctx.interaction:
+                await ctx.interaction.edit_original_response(attachments=[discord.File(bytes_buffer, filename="WikiLookup.json", description="WikiLookup wikis")])
+            else:
+                await ctx.send(file=discord.File(bytes_buffer, filename="WikiLookup.json", description="WikiLookup wikis"))
+        else:
+            message += "❌ Nothing to dump. Use wl_pull.\n"
+            await self._send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
@@ -74,15 +180,33 @@ class NIWALinkCommands(commands.Cog):
         await self._defer_if_interaction(ctx)
         message = ""
 
-        if self.wikis:
-            bytes_buffer = BytesIO(json.dumps(self.wikis).encode())
+        if self.wob_wikis:
+            bytes_buffer = BytesIO(json.dumps(self.wob_wikis).encode())
             if ctx.interaction:
                 await ctx.interaction.edit_original_response(attachments=[discord.File(bytes_buffer, filename="_wikis.json", description="WikiOperatingBuddy _wikis")])
             else:
                 await ctx.send(file=discord.File(bytes_buffer, filename="_wikis.json", description="WikiOperatingBuddy _wikis"))
         else:
-            message = "❌ Nothing to dump. Use wob_pull.\n"
+            message += "❌ Nothing to dump. Use wob_pull.\n"
             await self._send_or_edit(ctx, message)
+
+    @app_commands.guilds(*SquidgeBot.squidge_guilds())
+    @commands.hybrid_command(
+        name='wl_pull',
+        description="Pulls the current JSON from WikiLookup (WL).")
+    async def wl_pull(self, ctx: Context):
+        await self._defer_if_interaction(ctx)
+        message = ""
+
+        try:
+            if self.wl_wikis:
+                message += "⚠ WARNING: Overwriting previously pulled wikis list. \n"
+
+            self.wl_wikis: list[WLWiki] = requests.get(WIKI_LOOKUP_JSON_LINK, timeout=(6.1, 12)).json()
+            message += f"ℹ {len(self.wl_wikis)} wikis loaded."
+        except Exception as err:
+            message += "❌ Error: " + str(err.args)
+        await self._send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
@@ -93,14 +217,50 @@ class NIWALinkCommands(commands.Cog):
         message = ""
 
         try:
-            if self.wikis:
+            if self.wob_wikis:
                 message += "⚠ WARNING: Overwriting previously pulled wikis list. \n"
 
-            self.wikis: list[WOBWiki] = requests.get(WIKIS_JSON_LINK, timeout=(6.1, 12)).json()
-            message += f"ℹ {len(self.wikis)} wikis loaded."
+            self.wob_wikis: list[WOBWiki] = requests.get(WOB_JSON_LINK, timeout=(6.1, 12)).json()
+            message += f"ℹ {len(self.wob_wikis)} wikis loaded."
         except Exception as err:
-            message = "❌ Error: " + str(err.args)
+            message += "❌ Error: " + str(err.args)
         await self._send_or_edit(ctx, message)
+
+    @app_commands.guilds(*SquidgeBot.squidge_guilds())
+    @commands.hybrid_command(
+        name='wl_status',
+        description="Begins an embed that displays the wikis currently configured locally.")
+    async def wl_status(self, ctx: Context):
+        await self._defer_if_interaction(ctx)
+        message = ""
+        if self.wl_wikis:
+            try:
+                fields = []
+                for wiki in self.wl_wikis:
+                    fields_per_wiki = {
+                        "name": wiki["name"],
+                        "homepage": wiki["homepage"],
+                        "lang": wiki["lang"],
+                        "api": wiki["api"],
+                        "companies": ', '.join(wiki.get("companies", [])),
+                        "games": ', '.join(wiki.get("games", [])),
+                        "genres": ', '.join(wiki.get("genres", [])),
+                        "series": ', '.join(wiki.get("series", [])),
+                        "systems": ', '.join(wiki.get("systems", []))
+                    }
+                    fields.append(fields_per_wiki)
+                context_to_use = ctx.interaction if ctx.interaction else ctx
+                view = PaginationView("Wikis supported by WikiLookup",
+                                      fields, fields_per_page=9)
+                await view.send(context_to_use)
+
+            except Exception as err:
+                print(err)
+                message += "❌ Error: " + str(err.args)
+                await self._send_or_edit(ctx, message)
+        else:
+            message += "❌ Nothing to show. Use wl_pull.\n"
+            await self._send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
@@ -108,10 +268,11 @@ class NIWALinkCommands(commands.Cog):
         description="Begins an embed that displays the wikis currently configured locally.")
     async def wob_status(self, ctx: Context):
         await self._defer_if_interaction(ctx)
-        if self.wikis:
+        message = ""
+        if self.wob_wikis:
             try:
                 fields = []
-                for wiki in self.wikis:
+                for wiki in self.wob_wikis:
                     fields_per_wiki = {
                         "key": wiki["key"],
                         "name": wiki["name"],
@@ -127,10 +288,10 @@ class NIWALinkCommands(commands.Cog):
 
             except Exception as err:
                 print(err)
-                message = "❌ Error: " + str(err.args)
+                message += "❌ Error: " + str(err.args)
                 await self._send_or_edit(ctx, message)
         else:
-            message = "❌ Nothing to show. Use wob_pull.\n"
+            message += "❌ Nothing to show. Use wob_pull.\n"
             await self._send_or_edit(ctx, message)
 
     @staticmethod
