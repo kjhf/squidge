@@ -10,6 +10,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from src.squidge.discordsupport.pagination_view import PaginationView
+from src.squidge.discordsupport.slash_compat import defer_if_interaction, send_or_edit
 from src.squidge.entry.SquidgeBot import SquidgeBot
 from src.squidge.savedata.niwa_permissions import NIWAPermissions
 
@@ -68,7 +69,7 @@ class NIWALinkCommands(commands.Cog):
         name='wl_add',
         description="Add a wiki to the local configured list.")
     async def wl_add(self, ctx: Context, name: str, homepage: str, lang: str, api: str):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
         name = name.replace('_', ' ')
 
@@ -85,7 +86,7 @@ class NIWALinkCommands(commands.Cog):
         message += \
             "✅ Added successfully. Use `wl_option " + name + " parameter value1 value2...` to add additional optional fields. " \
             "Use wl_dump when you're done."
-        await self._send_or_edit(ctx, message)
+        await send_or_edit(ctx, message)
 
     @app_commands.describe(name="The wiki's name to amend")
     @app_commands.describe(option="The option to add. Can be companies, games, genres, series, systems.")
@@ -95,7 +96,7 @@ class NIWALinkCommands(commands.Cog):
         name='wl_option',
         description="Add optionals to an added wiki")
     async def wl_option(self, ctx: Context, name: str, option: str, *, values: str):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
         name = name.replace('_', ' ')
 
@@ -105,7 +106,7 @@ class NIWALinkCommands(commands.Cog):
             wiki = next((wiki for wiki in self.wl_wikis if wiki["name"].lower() == name.lower()), None)
             if wiki:
                 option_lower = option.lower()
-                new_values = [val.trim("\'\" ") for val in dict.fromkeys(values.split(','))]
+                new_values = [val.strip("\'\" ") for val in dict.fromkeys(values.split(','))]
                 if option_lower == "companies":
                     wiki["companies"] = new_values
                     message += "✅ Added companies successfully. Use wl_dump when you're done."
@@ -125,7 +126,7 @@ class NIWALinkCommands(commands.Cog):
                     message += "❌ ERROR: The option you specified is not recognised. Use: `companies`, `games`, `genres`, `series`, `systems`\n"
             else:
                 message += "❌ ERROR: Wiki not found with that name.`\n"
-        await self._send_or_edit(ctx, message)
+        await send_or_edit(ctx, message)
 
     @app_commands.describe(key='Key to file the wiki under. This must be unique across all wikis that WikiLookup supports.')
     @app_commands.describe(name="The wiki's full display name")
@@ -137,7 +138,7 @@ class NIWALinkCommands(commands.Cog):
         name='wob_add',
         description="Add a wiki to the local configured list.")
     async def wob_add(self, ctx: Context, key: str, name: str, url: str, article_url: str, *, aliases: str):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
         name = name.replace('_', ' ')
 
@@ -156,14 +157,14 @@ class NIWALinkCommands(commands.Cog):
             WOBWiki(key=key, name=name, url=url, articleUrl=article_url, aliases=new_aliases, setOnly=[])
         )
         message += "✅ Added successfully. Use wl_pull when you're done."
-        await self._send_or_edit(ctx, message)
+        await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wl_dump',
         description="Dump the local Wiki Lookup configured wikis to JSON")
     async def wl_dump(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
 
         if self.wl_wikis:
@@ -174,14 +175,14 @@ class NIWALinkCommands(commands.Cog):
                 await ctx.send(file=discord.File(bytes_buffer, filename="WikiLookup.json", description="WikiLookup wikis"))
         else:
             message += "❌ Nothing to dump. Use wl_pull.\n"
-            await self._send_or_edit(ctx, message)
+            await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wob_dump',
         description="Dump the local configured wikis to JSON")
     async def wob_dump(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
 
         if self.wob_wikis:
@@ -192,14 +193,14 @@ class NIWALinkCommands(commands.Cog):
                 await ctx.send(file=discord.File(bytes_buffer, filename="_wikis.json", description="WikiOperatingBuddy _wikis"))
         else:
             message += "❌ Nothing to dump. Use wob_pull.\n"
-            await self._send_or_edit(ctx, message)
+            await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wl_pull',
         description="Pulls the current JSON from WikiLookup (WL).")
     async def wl_pull(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
 
         try:
@@ -210,14 +211,14 @@ class NIWALinkCommands(commands.Cog):
             message += f"ℹ {len(self.wl_wikis)} wikis loaded."
         except Exception as err:
             message += "❌ Error: " + str(err.args)
-        await self._send_or_edit(ctx, message)
+        await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wob_pull',
         description="Pulls the current JSON from Wiki Operating Bot (WOB).")
     async def wob_pull(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
 
         try:
@@ -228,14 +229,14 @@ class NIWALinkCommands(commands.Cog):
             message += f"ℹ {len(self.wob_wikis)} wikis loaded."
         except Exception as err:
             message += "❌ Error: " + str(err.args)
-        await self._send_or_edit(ctx, message)
+        await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wl_status',
         description="Begins an embed that displays the wikis currently configured locally.")
     async def wl_status(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
         if self.wl_wikis:
             try:
@@ -261,17 +262,17 @@ class NIWALinkCommands(commands.Cog):
             except Exception as err:
                 print(err)
                 message += "❌ Error: " + str(err.args)
-                await self._send_or_edit(ctx, message)
+                await send_or_edit(ctx, message)
         else:
             message += "❌ Nothing to show. Use wl_pull.\n"
-            await self._send_or_edit(ctx, message)
+            await send_or_edit(ctx, message)
 
     @app_commands.guilds(*SquidgeBot.squidge_guilds())
     @commands.hybrid_command(
         name='wob_status',
         description="Begins an embed that displays the wikis currently configured locally.")
     async def wob_status(self, ctx: Context):
-        await self._defer_if_interaction(ctx)
+        await defer_if_interaction(ctx)
         message = ""
         if self.wob_wikis:
             try:
@@ -293,19 +294,7 @@ class NIWALinkCommands(commands.Cog):
             except Exception as err:
                 print(err)
                 message += "❌ Error: " + str(err.args)
-                await self._send_or_edit(ctx, message)
+                await send_or_edit(ctx, message)
         else:
             message += "❌ Nothing to show. Use wob_pull.\n"
-            await self._send_or_edit(ctx, message)
-
-    @staticmethod
-    async def _defer_if_interaction(ctx: Context):
-        if ctx.interaction:
-            await ctx.interaction.response.defer(ephemeral=True)
-
-    @staticmethod
-    async def _send_or_edit(ctx: Context, message: str):
-        if ctx.interaction:
-            await ctx.interaction.edit_original_response(content=message)
-        else:
-            await ctx.send(content=message)
+            await send_or_edit(ctx, message)

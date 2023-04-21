@@ -20,6 +20,7 @@ from pywikibot.exceptions import PageRelatedError
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
+from src.squidge.discordsupport.channel_logger import MESSAGE_TEXT_LIMIT
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.pwbsupport.category import CategoryAddBot
 from src.squidge.pwbsupport.helpers import get_all_users_generator
@@ -783,6 +784,45 @@ class WikiCommands(commands.Cog):
             await ctx.send("You don't have editor permission.")
 
     @commands.command(
+        name='delete_list',
+        description="Deletes from a supplied list.",
+        brief="Deletes from a supplied list.",
+        aliases=['dellist', 'deletioning'],
+        help=f'{COMMAND_SYMBOL}delete_list (args)',
+        pass_ctx=True)
+    async def delete_list(self, ctx: Context):
+        if self.permissions.is_admin(ctx.author):
+            self.login_to_sites()
+            try:
+                # If there is an attachment, read it
+                if str(ctx.message.attachments) == "[]":  # Checks if there is an attachment on the message
+                    await ctx.send("You need to send a text file with the message. Please upload and send a new message.")
+                    return
+
+                attachments = ctx.message.attachments
+                split_v1 = str(attachments).split("filename='")[1]
+                filename = str(split_v1).split("' ")[0]
+                if filename.endswith(".txt") or filename.endswith(".csv"):  # if csv or txt
+                    file_bytes = await attachments[0].read()  # Read the contents of the file as bytes
+                    file_contents = file_bytes.decode("utf-8").splitlines()  # Decode the bytes as a string[]
+                    author = ctx.author.__str__()
+                    auth_by = EDIT_WITH_AUTHORIZED_BY + author + " "
+                    edit_summary = auth_by + "Mass deletion of files"
+                    result = "Deleted: \n"
+                    for line in file_contents:
+                        if line:
+                            # Each line is a wiki title
+                            page = Page(self.inkipedia, line, ns=BuiltinNamespace.FILE)
+                            if self._try_delete_page(page, edit_summary):
+                                result += line + "\n"
+                            else:
+                                result += "*FAILED* " + line + "\n"
+                    await ctx.send(result[:MESSAGE_TEXT_LIMIT])
+
+            except Exception as ex:
+                await ctx.send(f"There was a problem: {ex.args}")
+
+    @commands.command(
         name='iotm',
         description="Run Inkipedian of the Month command",
         brief="Run Inkipedian of the Month command",
@@ -957,9 +997,9 @@ class WikiCommands(commands.Cog):
         return backlinks and any(backlink and backlink.full_url() != trig_clean_up_page for backlink in backlinks)
 
     @staticmethod
-    def _try_delete_page(page, unused_category_summary) -> bool:
+    def _try_delete_page(page, delete_summary) -> bool:
         try:
-            deleted = page.delete(reason=unused_category_summary, prompt=False)
+            deleted = page.delete(reason=delete_summary, prompt=False)
         except pywikibot.exceptions.Error as err:
             logging.error(f"Failed to delete {page} because a wiki exception occurred: {err}.", exc_info=err)
             return False
