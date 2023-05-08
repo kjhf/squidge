@@ -4,7 +4,6 @@ import datetime
 import logging
 import os
 import re
-from collections import defaultdict
 from itertools import chain
 from typing import Optional, List, Generator
 
@@ -14,9 +13,8 @@ from discord import TextChannel, Message, Interaction
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
-from pywikibot import Site, Page, pagegenerators, APISite  # APISite used for type hinting
+from pywikibot import Site, Page, pagegenerators, APISite, Category  # APISite used for type hinting
 from pywikibot.data import api
-from pywikibot.exceptions import PageRelatedError
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
 
@@ -31,7 +29,8 @@ from src.squidge.savedata.wiki_permissions import WikiPermissions
 DEFAULT_EDIT = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] ([[User_talk:{os.getenv('WIKI_USERNAME')}|Something wrong?]])"
 EDIT_WITH_AUTHORIZED_BY = f"[[User:{os.getenv('WIKI_USERNAME')}|Bot edit]] authorized by "
 REDIRECT_TEXT = "#REDIRECT [["
-DELETE_REASON_REGEX = re.compile(r"{{[dD]elete\s*?\|\s*([\s\S]*?)}}")
+FILE_LINK_REGEX = re.compile(r"\[\[:?[Ff]ile:([\s\S]*?)(?:\||\]\])")
+DELETE_REASON_REGEX = re.compile(r"{{[dD]elete\s*?\|\s*([\s\S]*?)}}")  # TODO - find a way of parsing templates inside the delete reason
 AUTHOR_REQ_REGEX = re.compile(r"(author req|(?:un|n[o']t?).*?(?:need|used?)|user image)")
 
 
@@ -141,13 +140,15 @@ class WikiCommands(commands.Cog):
             elif not Page(self.inkipedia, old_category).exists():
                 await ctx.send(f"Warning: old category does not exist. Skipping cat parent move.")
             else:
-                old_cat_page_list.move(new_category, reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
+                old_cat_page_list.move(new_category,
+                                       reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
             pages = chain(old_cat_page_list.articles(), old_cat_page_list.subcategories(recurse=True))
             count = 0
 
             new_cat_page_list = pywikibot.Category(self.inkipedia, new_category)
             for page in pages:
-                changed = page.change_category(old_cat_page_list, new_cat_page_list, summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
+                changed = page.change_category(old_cat_page_list, new_cat_page_list,
+                                               summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
                 await asyncio.sleep(1)  # yield
                 if changed:
                     count += 1
@@ -177,13 +178,15 @@ class WikiCommands(commands.Cog):
             if not Page(self.inkipedia, category_title).exists():
                 await ctx.send(f"Warning: the category does not exist.")
             else:
-                cat_page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary, prompt=False, deletetalk=True)
+                cat_page.delete(reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary, prompt=False,
+                                deletetalk=True)
 
             pages = chain(cat_page.articles(), cat_page.subcategories(recurse=True))
             count = 0
 
             for page in pages:
-                changed = page.change_category(cat_page, None, summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
+                changed = page.change_category(cat_page, None,
+                                               summary=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " " + summary)
                 await asyncio.sleep(1)  # yield
                 if changed:
                     count += 1
@@ -224,11 +227,13 @@ class WikiCommands(commands.Cog):
             first_edit_ts: pywikibot.Timestamp = user_to_nuke.first_edit[2]
             one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
             if first_edit_ts < one_day_ago:  # If the first edit was older than a day ago
-                await ctx.send(f"You don't have admin permission for this: {user_to_nuke.username}'s first contribution is more than a day old.")
+                await ctx.send(
+                    f"You don't have admin permission for this: {user_to_nuke.username}'s first contribution is more than a day old.")
                 return
 
             if user_to_nuke.username not in self.recent_vandals:
-                await ctx.send(f"You don't have admin permission for this: {user_to_nuke.username}'s has not tripped the anti-vandalism detection.")
+                await ctx.send(
+                    f"You don't have admin permission for this: {user_to_nuke.username}'s has not tripped the anti-vandalism detection.")
                 return
 
             await self._nuke(ctx, user_to_nuke)
@@ -247,14 +252,16 @@ class WikiCommands(commands.Cog):
                     if source_user:
                         source_user = source_user.group(1)
                     else:
-                        logging.warning(f"handle_inkipedia_event: There were no [] in the message and so a source user was not found.")
+                        logging.warning(
+                            f"handle_inkipedia_event: There were no [] in the message and so a source user was not found.")
                         return
 
                     # As insurance, also check that the source user indeed appears as a link, to make sure
                     # we haven't tripped over any funny symbols in the user's name
                     source_user_as_page = Page(self.inkipedia, source_user, BuiltinNamespace.USER)
                     if source_user_as_page.title(underscore=True) not in content:
-                        logging.error(f"handle_inkipedia_event: Determined the source user to be {source_user} but {source_user_as_page} is not in the content.")
+                        logging.error(
+                            f"handle_inkipedia_event: Determined the source user to be {source_user} but {source_user_as_page} is not in the content.")
                         return
 
                     logging.debug(f"handle_inkipedia_event: Checking {content}")
@@ -437,7 +444,8 @@ class WikiCommands(commands.Cog):
             else:
                 await ctx.send(f"The {user_id=} already has the role {role}.")
         else:
-            await ctx.send(f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
+            await ctx.send(
+                f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
 
     @commands.command(
         name='deny',
@@ -509,7 +517,8 @@ class WikiCommands(commands.Cog):
             else:
                 await ctx.send(f"The {user_id=} already does not have the role {role}.")
         else:
-            await ctx.send(f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
+            await ctx.send(
+                f"I wasn't able to get a target user id. You may omit other_user to target yourself, or use a mention.")
 
     async def _nuke(self, ctx, user_to_nuke: pywikibot.User):
         # Block the user
@@ -517,8 +526,7 @@ class WikiCommands(commands.Cog):
             await ctx.send(f"{user_to_nuke.username} is already blocked, skipping block step.")
         else:
             user_to_nuke.block(expiry='never',
-                               reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]"
-                               )
+                               reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + ": [[Inkipedia:Policy/Vandalism|Vandalism]]")
 
         # Get all contributions from the user
         contributions = user_to_nuke.contributions()
@@ -572,130 +580,192 @@ class WikiCommands(commands.Cog):
         auth_by = EDIT_WITH_AUTHORIZED_BY + author + " "
         orphaned_summary = auth_by + "Deleting orphaned talk page in [[:" + category_title + "]]"
         broken_redirect_summary = auth_by + "Deleting broken redirect page in [[:" + category_title + "]]"
+        double_redirect_summary = auth_by + "Fixing double redirect in [[:" + category_title + "]]"
         unused_redirect_summary = auth_by + "Deleting unused or superseded redirect page in [[:" + category_title + "]]"
         unused_category_summary = auth_by + "Empty category marked for deletion in [[:" + category_title + "]]"
         author_request_summary = auth_by + "Deleting page by author request in [[:" + category_title + "]]"
+        duplicate_request_summary = auth_by + "Deleting reported duplicate in [[:" + category_title + "]]"
         count = 0
         for page in chain(cat_page.articles(), cat_page.subcategories(recurse=True)):
             await asyncio.sleep(0.1)  # yield
 
             if page.isTalkPage():
-                content_page = page.toggleTalkPage()
-                if content_page is None or not content_page.exists() or content_page.isRedirectPage():
-                    # Delete the orphan
-                    deleted = self._try_delete_page(page, orphaned_summary)
-                    count = count + int(deleted)
-                    continue
-                else:
-                    logging.info(f"Did not delete {page} because its contents page is in use.")
-                    continue
+                if await self._handle_talkpage_auto_delete(page, orphaned_summary):
+                    count = count + 1
+                continue
 
             if page.is_categorypage():
-                subpages = chain(page.articles(), page.subcategories(recurse=True))
-                if not any(subpages):
-                    # Delete the empty category
-                    deleted = self._try_delete_page(page, unused_category_summary)
-                    count = count + int(deleted)
-                    continue
-                else:
-                    logging.info(f"Did not delete {page} because it has subpages [{', '.join([subpage.__str__() for subpage in subpages])}].")
-                    continue
+                if await self._handle_category_auto_delete(page, unused_category_summary):
+                    count = count + 1
+                continue
 
             if page.namespace() == BuiltinNamespace.USER.value:
-                if self._is_in_use(page):
-                    logging.info(f"Skipping evaluating user page {page} because it is in use.")
-                    continue
-                try:
-                    if page.latest_revision.user == page.oldest_revision.user:
-                        deleted = self._try_delete_page(page, author_request_summary)
-                        count = count + int(deleted)
-                    else:
-                        logging.info(f"Not taking action against {page}: user page but someone other than the author requested deletion.")
-                except Exception as error:
-                    logging.error(error)
+                if await self._handle_userpage_auto_delete(page, author_request_summary):
+                    count = count + 1
                 continue
 
             if page.is_filepage():
-                if self._is_in_use(page):
-                    logging.info(f"Skipping evaluating file page {page} because it is in use.")
-                    continue
-
-                page.revisions()  # load revisions
-                try:
-                    first_revision: Revision = page.oldest_revision
-                    latest_revision = page.latest_revision
-                    match = DELETE_REASON_REGEX.search(page.text)
-                    if first_revision.user == latest_revision.user:
-                        reason = match.group(1).lower() if match else None
-                        if not match or AUTHOR_REQ_REGEX.search(reason):
-                            deleted = self._try_delete_page(page, author_request_summary)
-                            count = count + int(deleted)
-                            continue
-                        elif "dupe file" in reason or "duplicate" in reason:
-                            if "file:" in reason:
-                                deleted = self._try_delete_page(page, f"{author_request_summary} with reason: {match.group(1)}")
-                                count = count + int(deleted)
-                            else:
-                                logging.info(
-                                    f"Not taking action against {page}: author requested deletion but their dupe reason did not contain a file target.")
-                            continue
-                        else:
-                            logging.info(
-                                f"Not taking action against {page}: author requested deletion but I didn't understand the reason.")
-                    else:
-                        # Extend this to include user and wiki image handling and send off notices.
-                        logging.info(
-                            f"Not taking action against {page}: an editor other than the author requested deletion.")
-                except Exception as error:
-                    logging.error(error)
-                    continue
+                if await self._handle_filepage_auto_delete(page, author_request_summary, duplicate_request_summary):
+                    count = count + 1
+                    continue  # only loop if deleted. Otherwise, let's try the redirect.
 
             # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
-            previous_revision: Optional[str] = None
-            if page.isRedirectPage() \
-                    or (REDIRECT_TEXT in page.text[:1024]) \
-                    or ((previous_revision := self._previous_revision_text(page)) and REDIRECT_TEXT in previous_revision):
-                if page.isRedirectPage():
-                    target_page = page.getRedirectTarget()
-                else:
-                    text = previous_revision if previous_revision else page.text
-                    start_index = text.index(REDIRECT_TEXT) + len(REDIRECT_TEXT)
-                    target_page_title = text[start_index:text.index("]]", start_index)].lstrip(': ')
-                    target_page = Page(self.inkipedia, target_page_title)
+            target_page = self._get_redirect_target(page)
+            if target_page:
+                if await self._handle_redirect_auto_delete(page, target_page, broken_redirect_summary,
+                                                           double_redirect_summary, unused_redirect_summary):
+                    count = count + 1
+                continue
 
-                if target_page is None or not target_page.exists():
-                    # Delete the broken redirect
-                    deleted = self._try_delete_page(page, broken_redirect_summary + " targeting " + (
-                        target_page.title() if target_page else "non-existent page"))
-                    count = count + int(deleted)
-                    continue
-                elif target_page.isRedirectPage():
-                    # Double redirect
-                    target_target_page = target_page.getRedirectTarget()
-                    if target_target_page == page:
-                        # Circular reference
-                        deleted = self._try_delete_page(page, broken_redirect_summary + " targeting " + (
-                                target_page.title() if target_page else "non-existent page"))
-                        count = count + int(deleted)
-                        continue
-                    else:
-                        # Fix the redirect instead
-                        page.set_redirect_target(
-                            target_target_page,
-                            summary=auth_by + "fixing double redirect to " + target_target_page.title(as_link=True),
-                            force=True)  # If the page isn't a redirect, which it isn't because it's marked with {{delete}}, it will not be corrected without this
-                else:
-                    # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
-                    if self._is_in_use(page):
-                        logging.info(f"Did not delete {page} because it is in use.")
-                    else:
-                        deleted = self._try_delete_page(page, unused_redirect_summary + " targeting " + (
-                            target_page.title(as_link=True) if target_page else "non-existent page"))
-                        count = count + int(deleted)
-                    continue
-            else:
-                logging.info(f"Not taking action against {page}.")
+            logging.info(f"Not taking action against {page}.")
         return count
+
+    async def _handle_redirect_auto_delete(self, page: Page, target_page: Page,
+                                           broken_redirect_summary,
+                                           double_redirect_summary,
+                                           unused_redirect_summary):
+        if not target_page.exists():
+            # Delete the broken redirect
+            return self._try_delete_page(page, broken_redirect_summary + " targeting " + (target_page.title()))
+
+        if target_page.isRedirectPage():
+            # Double redirect
+            target_target_page = target_page.getRedirectTarget()
+            if target_target_page == page:
+                # Circular reference
+                return self._try_delete_page(page, broken_redirect_summary + " targeting " + (target_page.title()))
+            # else fix the redirect instead
+            page.set_redirect_target(
+                target_target_page,
+                summary=double_redirect_summary + " targeting " + target_target_page.title(as_link=True),
+                force=True)  # If the page isn't a redirect, which it isn't because it's marked with {{delete}}, it will not be corrected without this
+            self._handle_not_deleting(page, "fixed redirect instead.", False, False)
+        else:
+            # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
+            if self._is_in_use(page):
+                self._handle_not_deleting(page, "it is in use.")
+            else:
+                return self._try_delete_page(page, unused_redirect_summary + " targeting " + (
+                    target_page.title(as_link=True)))
+        return False
+
+    async def _handle_filepage_auto_delete(self, page: Page, author_request_summary, duplicate_request_summary):
+        if self._is_in_use(page):
+            self._handle_not_deleting(page, "it is in use.")
+            return False
+
+        page.revisions()  # load revisions
+        try:
+            first_revision: Revision = page.oldest_revision
+            latest_revision = page.latest_revision
+            is_uploader = first_revision.user == latest_revision.user
+            given_reason = self._get_given_delete_reason(page)
+
+            if not given_reason and is_uploader:
+                return self._try_delete_page(page, author_request_summary)
+
+            # If it's a duplicate
+            given_reason_cf = given_reason.casefold()
+            if any(r in given_reason_cf for r in ("dupe file", "dupe", "duplicate")):
+                dupe_target = self._get_dupe_file_target(page, given_reason)
+                if dupe_target:
+                    if dupe_target.exists():
+                        return self._try_delete_page(
+                            page, f"{duplicate_request_summary} targeting {dupe_target.title(as_link=True)}")
+                    else:
+                        self._handle_not_deleting(
+                            page, "the dupe reason contains a non-existent file target.")
+                else:
+                    self._handle_not_deleting(
+                        page, "the dupe reason does not contain a file target.")
+            elif is_uploader:
+                if AUTHOR_REQ_REGEX.search(given_reason_cf):
+                    return self._try_delete_page(page, author_request_summary)
+                else:
+                    self._handle_not_deleting(
+                        page, "author requested deletion but I didn't understand the reason.", False, True)
+            else:
+                # Extend this to include user and wiki image handling and send off notices.
+                self._handle_not_deleting(page, "an editor other than the author requested deletion.", False, True)
+        except Exception as error:
+            logging.error(error)
+        return False
+
+    async def _handle_userpage_auto_delete(self, page, author_request_summary):
+        if self._is_in_use(page):
+            self._handle_not_deleting(page, "it is in use.")
+            return False
+
+        try:
+            if page.latest_revision.user == page.oldest_revision.user:
+                return self._try_delete_page(page, author_request_summary)
+            # else
+            self._handle_not_deleting(page, "someone other than the author requested deletion of a userpage.")
+        except Exception as error:
+            logging.error(error)
+        return False
+
+    async def _handle_category_auto_delete(self, page: Category, unused_category_summary):
+        subpages = chain(page.articles(), page.subcategories(recurse=True))
+        if any(subpages):
+            self._handle_not_deleting(page, "it has subpages.")
+            return False
+
+        # Delete the empty category
+        return self._try_delete_page(page, unused_category_summary)
+
+    async def _handle_talkpage_auto_delete(self, page: Page, summary):
+        content_page = page.toggleTalkPage()
+        if content_page is None or not content_page.exists() or content_page.isRedirectPage():
+            # Delete the orphan
+            return self._try_delete_page(page, summary)
+        # else
+        self._handle_not_deleting(page, "its contents page is in use.")
+        return False
+
+    def _handle_not_deleting(self, page: Page, reason: str,
+                             add_as_clarify: bool = True,
+                             add_as_cannot_auto: bool = True):
+        # Add to the logging
+        reason_pre = f"Did not delete {page} because: "
+        logging.info(reason_pre + reason)
+
+        # If not modifying the page
+        if not add_as_cannot_auto and not add_as_clarify:
+            return
+
+        # Don't double-up
+        # if self._is_last_modified_by_squidge(page):  # TODO - this isn't working for some reason
+        #     return
+
+        current_reason = self._get_given_delete_reason(page)
+
+        if 'CannotAutoDelete' in current_reason or '{{clarify' in current_reason:
+            return
+
+        modified_reason = current_reason or ""
+        if add_as_clarify:
+            modified_reason += " {{clarify|" + reason + "}}"
+        if add_as_cannot_auto:
+            # Add {{Delete/CannotAutoDelete}}
+            modified_reason += " {{Delete/CannotAutoDelete}}"
+            pass
+        page.text = re.sub(DELETE_REASON_REGEX, r'{{delete|' + modified_reason + '}}', page.text)
+        page.save(
+            summary=DEFAULT_EDIT + ": Cannot process auto-delete",
+            prompt=False)
+
+    @staticmethod
+    def _get_given_delete_reason(page) -> Optional[str]:
+        match = DELETE_REASON_REGEX.search(page.text)
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
+    def _is_last_modified_by_squidge(page: Page):
+        page.revisions(total=1)
+        return page.site.username() == page.userName
 
     @commands.command(
         name='remove_construction',
@@ -796,7 +866,8 @@ class WikiCommands(commands.Cog):
             try:
                 # If there is an attachment, read it
                 if str(ctx.message.attachments) == "[]":  # Checks if there is an attachment on the message
-                    await ctx.send("You need to send a text file with the message. Please upload and send a new message.")
+                    await ctx.send(
+                        "You need to send a text file with the message. Please upload and send a new message.")
                     return
 
                 attachments = ctx.message.attachments
@@ -913,7 +984,8 @@ class WikiCommands(commands.Cog):
 
         # Post results to the page
         # For rights level: User / autopatrolled / Patroller / Admin / Bcrat
-        best = [pair for pair in sorted(users_info.items(), key=lambda kv: kv[1]["score"], reverse=True) if pair[1]["score"] > 0]
+        best = [pair for pair in sorted(users_info.items(), key=lambda kv: kv[1]["score"], reverse=True) if
+                pair[1]["score"] > 0]
         iotm_page = Page(self.inkipedia, self.inkipedia.username() + "/iotm", ns=BuiltinNamespace.USER)
         iotm_page.text = """
 {| class="sortable wikitable"
@@ -938,10 +1010,12 @@ class WikiCommands(commands.Cog):
             iotm_page.text += f"\n| [[Special:Contributions/{username}|{username}]]\n|{user_info_dict['score']}\n|{rights_level}\n|{user_info_dict['registration']}\n|-"
 
         iotm_page.text += "\n|}"
-        iotm_page.save(summary=DEFAULT_EDIT + f" Updating IotM scores since {str(end)}", minor=True, botflag=True, force=True)
+        iotm_page.save(summary=DEFAULT_EDIT + f" Updating IotM scores since {str(end)}", minor=True, botflag=True,
+                       force=True)
         return iotm_page
 
-    async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace, rule_title):
+    async def add_categories_with_perm_check(self, interaction: Interaction, category_no_ns, operation, rule_namespace,
+                                             rule_title):
         user = interaction.user
         if self.permissions.is_editor(user):
             self.login_to_sites()
@@ -971,7 +1045,8 @@ class WikiCommands(commands.Cog):
                 ns = switch.get(rule_namespace.lower().replace('_', ' '), 0)
             else:
                 ns = 0
-            namespace_filter_pages = pagegenerators.AllpagesPageGenerator(includeredirects=False, site=self.inkipedia, namespace=ns)
+            namespace_filter_pages = pagegenerators.AllpagesPageGenerator(includeredirects=False, site=self.inkipedia,
+                                                                          namespace=ns)
             operation_switch = {
                 'are named': fr"^{re.escape(rule_title)}$",
                 'start with': fr"^{re.escape(rule_title)}",
@@ -981,7 +1056,9 @@ class WikiCommands(commands.Cog):
             regex_str = operation_switch.get(operation, None)
             rule_pages = pagegenerators.RegexFilterPageGenerator(namespace_filter_pages, re.compile(regex_str))
 
-            bot = CategoryAddBot(rule_pages, category_no_ns, comment=EDIT_WITH_AUTHORIZED_BY + user.__str__() + " adding category " + category_no_ns, prompt=False)
+            bot = CategoryAddBot(rule_pages, category_no_ns,
+                                 comment=EDIT_WITH_AUTHORIZED_BY + user.__str__() + " adding category " + category_no_ns,
+                                 prompt=False)
             bot.site = self.inkipedia
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, bot.run)
@@ -993,8 +1070,15 @@ class WikiCommands(commands.Cog):
     def _is_in_use(page):
         # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
         backlinks: List[pywikibot.Page] = list(page.backlinks(total=3))
-        trig_clean_up_page = "https://splatoonwiki.org/wiki/User_talk%3ATrig_Jegman%2FProject_Clean-Up"  # thanks Trig.
-        return backlinks and any(backlink and backlink.full_url() != trig_clean_up_page for backlink in backlinks)
+        logging.info("Up to 3 backlinks checked: " + '\n'.join([page.full_url() for page in backlinks]))
+
+        # thanks Trig.
+        trig_userspace = "https://splatoonwiki.org/wiki/User%3ATrig_Jegman%2F"
+        trig_usertalkspace = "https://splatoonwiki.org/wiki/User_talk%3ATrig_Jegman%2F"
+        return backlinks and any(backlink
+                                 and not backlink.full_url().startswith(trig_userspace)
+                                 and not backlink.full_url().startswith(trig_usertalkspace)
+                                 for backlink in backlinks)
 
     @staticmethod
     def _try_delete_page(page, delete_summary) -> bool:
@@ -1018,3 +1102,32 @@ class WikiCommands(commands.Cog):
         latest: 'Revision' = page.latest_revision
         parent_id = latest.get("parentid")
         return page.getOldVersion(parent_id) if parent_id else None
+
+    @staticmethod
+    def _get_redirect_target(page: Page) -> Optional[Page]:
+        """
+        Return the page's redirect target, including where it would have redirected to if it's not a redirect.
+        None if it's definitely not a redirect.
+        """
+        if page.isRedirectPage():
+            return page.getRedirectTarget()
+
+        previous_revision: Optional[str] = None
+        if (REDIRECT_TEXT in page.text[:1024]) or (
+                (previous_revision := WikiCommands._previous_revision_text(page))
+                and REDIRECT_TEXT in previous_revision):
+            text = previous_revision if previous_revision else page.text
+            start_index = text.index(REDIRECT_TEXT) + len(REDIRECT_TEXT)
+            target_page_title = text[start_index:text.index("]]", start_index)].lstrip(': ')
+            return Page(page.site, target_page_title)
+        return None
+
+    @staticmethod
+    def _get_dupe_file_target(page: Page, reason: str) -> Optional[Page]:
+        """
+        Return the duplicate target if it's in the reason.
+        None if it's not there.
+        """
+        match = FILE_LINK_REGEX.search(reason)
+        if match:
+            return Page(page.site, "File:" + match.group(1))
