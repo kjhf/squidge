@@ -876,15 +876,24 @@ class WikiCommands(commands.Cog):
                 if filename.endswith(".txt") or filename.endswith(".csv"):  # if csv or txt
                     file_bytes = await attachments[0].read()  # Read the contents of the file as bytes
                     file_contents = file_bytes.decode("utf-8").splitlines()  # Decode the bytes as a string[]
-                    author = ctx.author.__str__()
-                    auth_by = EDIT_WITH_AUTHORIZED_BY + author + " "
-                    edit_summary = auth_by + "Mass deletion of files"
+                    edit_summary_pre = EDIT_WITH_AUTHORIZED_BY + str(ctx.author) + " "
                     result = "Deleted: \n"
                     for line in file_contents:
                         if line:
-                            # Each line is a wiki title
-                            page = Page(self.inkipedia, line, ns=BuiltinNamespace.FILE)
-                            if self._try_delete_page(page, edit_summary):
+                            # If the line contains a comma, it's the 'Replaced X with Y format'.
+                            # Otherwise, simply run the deletion.
+                            (page_to_delete, _, destination_page) = line.partition(',')
+                            page_to_delete = page_to_delete.strip()
+                            page_to_delete = Page(self.inkipedia, page_to_delete, ns=BuiltinNamespace.FILE)
+                            if destination_page:
+                                destination_page = destination_page.strip()
+                                destination_page = Page(self.inkipedia, destination_page, ns=BuiltinNamespace.FILE)
+                                edit_summary = f"replaced {page_to_delete.title(as_link=False)} " \
+                                               f"with {destination_page.title(as_link=True)}"
+                            else:
+                                edit_summary = f"mass deleting files"
+
+                            if self._try_delete_page(page_to_delete, edit_summary_pre + edit_summary):
                                 result += line + "\n"
                             else:
                                 result += "*FAILED* " + line + "\n"
