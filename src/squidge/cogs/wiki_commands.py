@@ -334,7 +334,6 @@ class WikiCommands(commands.Cog):
             await ctx.send(f'{COMMAND_SYMBOL}false <phrase>')
             return
 
-        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
         set_list = set([w.lower() for w in self.bad_words.false_triggers])
 
         if phrase in set_list:
@@ -345,7 +344,7 @@ class WikiCommands(commands.Cog):
             await ctx.send(f"Added {phrase} to false triggers!")
 
         self.bad_words.false_triggers = list(set_list)
-        await self.bot.save_data.save(channel)
+        await self.bot.save_data.save(ctx)
 
     @commands.command(
         name='whitelist',
@@ -376,7 +375,7 @@ class WikiCommands(commands.Cog):
             await ctx.send(f"Added {word} to allowed words!")
 
         self.bad_words.whitelist = list(set_list)
-        await self.bot.save_data.save(channel)
+        await self.bot.save_data.save(ctx)
 
     @commands.command(
         name='grant',
@@ -430,14 +429,12 @@ class WikiCommands(commands.Cog):
             if user_id not in role_list:
                 if role == 'patrol':
                     role_list.append(user_id)
-                    channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                    await self.bot.save_data.save(channel)
+                    await self.bot.save_data.save(ctx)
                     await ctx.send(f"Added {user_id} to patrol!")
                 else:
                     if self.permissions.is_owner(ctx.author):
                         role_list.append(user_id)
-                        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                        await self.bot.save_data.save(channel)
+                        await self.bot.save_data.save(ctx)
                         await ctx.send(f"Added {user_id} to {role}!")
                     else:
                         await ctx.send(f"You don't have permission to do that.")
@@ -499,8 +496,7 @@ class WikiCommands(commands.Cog):
             if user_id in role_list:
                 if role == 'patrol':
                     role_list.remove(user_id)
-                    channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                    await self.bot.save_data.save(channel)
+                    await self.bot.save_data.save(ctx)
                     await ctx.send(f"Removed {user_id} from patrol!")
                 else:
                     if self.permissions.is_owner(ctx.author):
@@ -509,8 +505,7 @@ class WikiCommands(commands.Cog):
                             return
 
                         role_list.remove(user_id)
-                        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-                        await self.bot.save_data.save(channel)
+                        await self.bot.save_data.save(ctx)
                         await ctx.send(f"Removed {user_id} from {role}!")
                     else:
                         await ctx.send(f"You don't have permission to do that.")

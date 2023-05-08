@@ -108,7 +108,8 @@ class SquidgeBot(Bot):
         # Process the message in the normal way
         ctx = await self.get_context(message)
         await self.invoke(ctx)
-        ###
+        # Process our highlights
+        await self.save_data.highlights.process_highlight(ctx)
 
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name}, id {self.user.id}')
