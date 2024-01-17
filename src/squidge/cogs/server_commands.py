@@ -7,7 +7,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from src.squidge.discordsupport.discord_server_helper import check_guild, get_members, conditional_perform_fetch, \
-    has_role, get_formatted_user_roles, is_in_guild
+    has_role, get_formatted_user_roles
 from src.squidge.discordsupport.format_helper import truncate
 from src.squidge.entry.consts import COMMAND_SYMBOL, BOT_NAME
 
