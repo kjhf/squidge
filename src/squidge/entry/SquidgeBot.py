@@ -61,7 +61,7 @@ class SquidgeBot(Bot):
         from src.squidge.cogs.niwa_link import NIWALinkCommands
         _ = await self.try_add_cog(NIWALinkCommands)
 
-        from src.squidge.cogs.highlights import HighlightCommands
+        from src.squidge.cogs.highlight_commands import HighlightCommands
         self.highlight_commands = await self.try_add_cog(HighlightCommands)
 
         # Sync slash commands
