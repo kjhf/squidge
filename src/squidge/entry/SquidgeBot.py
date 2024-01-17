@@ -130,8 +130,18 @@ class SquidgeBot(Bot):
         )
 
     async def load_save_data(self):
-        channel: TextChannel = self.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
-        last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
+        perms_channel_str = os.getenv("WIKI_PERMISSIONS_CHANNEL")
+        if not perms_channel_str:
+            raise RuntimeError(f"WIKI_PERMISSIONS_CHANNEL not found in the env vars.")
+
+        channel: TextChannel = self.get_channel(int(perms_channel_str))
+        if not channel:
+            raise RuntimeError(f"WIKI_PERMISSIONS_CHANNEL {perms_channel_str} not found.")
+
+        try:
+            last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
+        except discord.NotFound:
+            last_message = None
         if last_message:
             permissions_json = json.loads(last_message.content)
             self.save_data = SaveData.from_json(permissions_json)
@@ -143,4 +153,4 @@ class SquidgeBot(Bot):
             else:
                 logging.info("Permissions loaded!")
         else:
-            raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no permissions. Cannot infer owner.")
+            raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no previous message or I cannot read it.")
