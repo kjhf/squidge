@@ -9,6 +9,7 @@ from discord.ext import commands
 from discord.ui import View
 
 from src.squidge.entry.SquidgeBot import SquidgeBot
+from src.squidge.entry.consts import BOT_NAME
 
 
 class YesNoView(View):
@@ -44,7 +45,7 @@ class YesNoView(View):
         self.stop()
 
 
-class WikiSlashCommands(commands.GroupCog, name="squidge"):
+class WikiSlashCommands(commands.GroupCog, name=BOT_NAME):
     """A grouping of wiki slash commands."""
 
     def __init__(self, bot: commands.Bot):

@@ -1,6 +1,7 @@
 from typing import Optional, Sequence
 
 from discord import Guild, Role, Member
+from discord.app_commands import commands
 
 
 async def get_members(guild: Guild, role: Optional[Role] = None) -> Sequence[Member]:
@@ -31,3 +32,9 @@ async def conditional_perform_fetch(guild: Guild):
     if len(guild.roles) < 2 or len(guild.members) < 2:
         await guild.fetch_roles()
         guild.fetch_members(limit=None)
+
+
+def is_in_guild(guild_id):
+    async def predicate(ctx):
+        return ctx.guild and ctx.guild.id == guild_id
+    return commands.check(predicate)

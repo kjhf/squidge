@@ -21,7 +21,7 @@ class HighlightCommands(commands.Cog):
         name='highlight',
         description="Notifies you for a given phrase.",
         brief="Toggles a highlight notifier for you.",
-        aliases=['highlight', 'hilight'],
+        aliases=['hilight'],
         help=f'{COMMAND_SYMBOL}highlight <phrase>. Use \\b to mark a boundary at the start/end.',
         pass_ctx=True)
     async def highlight(self, ctx: Context, *, phrase: str):
