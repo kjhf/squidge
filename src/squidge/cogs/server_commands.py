@@ -87,8 +87,10 @@ class ServerCommands(commands.Cog):
         aliases=['colorme', 'colourme', 'color_me', 'colour_me'],
         help=f'{COMMAND_SYMBOL}colourme [_colour_|random|remove]. The colour may be a common English name or hex code.',
         pass_ctx=True)
-    @is_in_guild(1131847158610534400)  # awkward's goo lagoon
     async def colour_me(self, ctx: Context, *, colour_str: Optional[str]):
+        if ctx.guild.id != 1131847158610534400:  # awkward's goo lagoon
+            return
+
         if not colour_str:
             await ctx.send_help(self.colour_me)
             return
@@ -207,7 +209,7 @@ class ServerCommands(commands.Cog):
 
                         # Base the new role's position on the nitro role position, otherwise given bottom is 0,
                         # setting to be above "everyone" at 0, and the lowest role and automatic role e.g. Nitro.
-                        nitro_role_position = nitro_role.position + 1 if nitro_role else 4
+                        nitro_role_position = nitro_role.position if nitro_role else 4
                         await new_role.edit(position=nitro_role_position)
                         await user.add_roles(new_role, reason=f"{BOT_NAME} (Requested by {user.id}")
                     except discord.errors.HTTPException:
