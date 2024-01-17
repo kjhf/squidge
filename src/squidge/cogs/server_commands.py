@@ -203,10 +203,12 @@ class ServerCommands(commands.Cog):
                         new_role = await guild.create_role(name=request_role_name,
                                                            reason=f"Requested by {user.id}",
                                                            colour=colour)
+                        nitro_role = next((r for r in guild.roles if r.is_premium_subscriber()), None)
 
-                        # Bottom is 0, setting to 2 to be above the lowest role and everyone,
-                        # 1 is often used as a custom default
-                        await new_role.edit(position=2)
+                        # Base the new role's position on the nitro role position, otherwise given bottom is 0,
+                        # setting to be above "everyone" at 0, and the lowest role and automatic role e.g. Nitro.
+                        nitro_role_position = nitro_role.position + 1 if nitro_role else 4
+                        await new_role.edit(position=nitro_role_position)
                         await user.add_roles(new_role, reason=f"{BOT_NAME} (Requested by {user.id}")
                     except discord.errors.HTTPException:
                         await ctx.send("Discord rejected your request... did you give me a bad value?")
