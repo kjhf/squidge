@@ -23,6 +23,7 @@ class SquidgeBot(Bot):
         self.ready = False
         self.save_data = SaveData()
         self.wiki_commands = None
+        self.highlight_commands = None
         self.presence = ""
         intents = discord.Intents.default()
         intents.members = True  # Needed to call fetch_members for username & tag recognition (grant/deny)
@@ -59,6 +60,9 @@ class SquidgeBot(Bot):
 
         from src.squidge.cogs.niwa_link import NIWALinkCommands
         _ = await self.try_add_cog(NIWALinkCommands)
+
+        from src.squidge.cogs.highlights import HighlightCommands
+        self.highlight_commands = await self.try_add_cog(HighlightCommands)
 
         # Sync slash commands
         assert self.tree.get_commands(), "No commands were registered"
@@ -109,7 +113,7 @@ class SquidgeBot(Bot):
         ctx = await self.get_context(message)
         await self.invoke(ctx)
         # Process our highlights
-        await self.save_data.highlights.process_highlight(ctx)
+        await self.highlight_commands.process_highlight(ctx)
 
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name}, id {self.user.id}')

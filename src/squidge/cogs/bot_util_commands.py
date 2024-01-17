@@ -6,7 +6,6 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from src.squidge.entry.consts import COMMAND_SYMBOL
-from src.squidge.savedata.highlights import Highlights
 from src.squidge.savedata.topics import TOPICS
 
 
@@ -35,7 +34,8 @@ class BotUtilCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}invite',
         pass_ctx=True)
     async def invite(self, ctx: Context):
-        await ctx.send(f"https://discordapp.com/oauth2/authorize?client_id={os.getenv('DISCORD_BOT_CLIENT_ID')}&scope=bot%20applications.commands&permissions=2147483648")
+        await ctx.send(
+            f"https://discordapp.com/oauth2/authorize?client_id={os.getenv('DISCORD_BOT_CLIENT_ID')}&scope=bot%20applications.commands&permissions=2147483648")
 
     @commands.command(
         name='Random topic',
@@ -47,21 +47,3 @@ class BotUtilCommands(commands.Cog):
     async def topic(self, ctx: Context):
         topic_to_discuss = random.choice(TOPICS)
         await ctx.send(f"You should discuss... `{topic_to_discuss}` ...Go!")
-
-    @commands.command(
-        name='Highlight phrase',
-        description="Toggles a highlight notifier for you.",
-        brief="Toggles a highlight notifier for you.",
-        aliases=['highlight', 'hilight'],
-        help=f'{COMMAND_SYMBOL}highlight <phrase>',
-        pass_ctx=True)
-    async def highlight(self, ctx: Context, *, phrase: str):
-        added = self.bot.save_data.highlights.toggle_highlight(ctx.author.id, phrase)
-        if added:
-            no_space_warning = "" if '\\b' in phrase else \
-                "Note: your phrase doesn't have \\b in it, so will match inside words. " \
-                "Use \\b for boundary if you don't want this."
-            await ctx.send(f"You are now watching `{added}`. {no_space_warning}")
-        else:
-            await ctx.send(f"You are no longer watching `{phrase}`.")
-        await self.bot.save_data.save(ctx)
