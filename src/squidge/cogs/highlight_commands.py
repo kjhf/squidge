@@ -46,7 +46,7 @@ class HighlightCommands(commands.Cog):
                 # Make sure the user can see this channel!
                 if any(user_id_int == member.id for member in channel.members):
                     user = ctx.bot.get_user(user_id_int)
-                    await user.send("Hey! Your highlight `{found}` was mentioned at: " + ctx.message.jump_url)
+                    await user.send(f"Hey! Your highlight `{found}` was mentioned at: {ctx.message.jump_url}")
             await asyncio.sleep(0.001)  # yield
 
 
