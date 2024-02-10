@@ -28,8 +28,8 @@ class HighlightCommands(commands.Cog):
         added = toggle_highlight(self.bot.save_data.highlights, ctx.author.id, phrase)
         if added:
             no_space_warning = "" if '\\b' in phrase else \
-                "Note: your phrase doesn't have \\b in it, so will match inside words. " \
-                "Use \\b for boundary if you don't want this."
+                "Note: your phrase doesn't have \\b in it, so might match inside words. Discord trims spaces from messages! " \
+                "Use \\b for boundary if you don't want to match inside words. I will convert \\b into `[\s\W\b]`."
             await ctx.send(f"You are now watching `{added}`. {no_space_warning}")
         else:
             await ctx.send(f"You are no longer watching `{phrase}`.")
@@ -39,13 +39,14 @@ class HighlightCommands(commands.Cog):
         """Send a highlight message if appropriate"""
         saved_highlights = self.bot.save_data.highlights
         for user_id, watched in saved_highlights.highlights.items():
-            if should_highlight(saved_highlights, user_id, ctx.message):
+            found = should_highlight(saved_highlights, user_id, ctx.message)
+            if found:
                 user_id_int = int(user_id)
                 channel: TextChannel = ctx.channel
                 # Make sure the user can see this channel!
                 if any(user_id_int == member.id for member in channel.members):
                     user = ctx.bot.get_user(user_id_int)
-                    await user.send("Hey! One of your highlights was mentioned at: " + ctx.message.jump_url)
+                    await user.send("Hey! Your highlight `{found}` was mentioned at: " + ctx.message.jump_url)
             await asyncio.sleep(0.001)  # yield
 
 
@@ -59,7 +60,7 @@ def standardise_user_id(user: Union[User, str, int]) -> str:
 def toggle_highlight(saved_highlights: Highlights, user: int, phrase: str) -> Optional[str]:
     """Toggles the highlight for a given user. Returns the phrase if added, None if removed."""
     user_id = standardise_user_id(user)
-    phrase = phrase.casefold().replace(' ', '\\b')
+    phrase = phrase.casefold().replace(' ', '[\s\W\b]').replace('\\b', '[\s\W\b]')
     if user_id in saved_highlights.highlights:
         if phrase in saved_highlights.highlights[user_id]:
             saved_highlights.highlights[user_id].remove(phrase)
@@ -72,7 +73,7 @@ def toggle_highlight(saved_highlights: Highlights, user: int, phrase: str) -> Op
     return phrase
 
 
-def should_highlight(saved_highlights: Highlights, user, message: Message) -> bool:
+def should_highlight(saved_highlights: Highlights, user, message: Message) -> Optional[str]:
     """Get if the message should be highlighted for the user"""
     user_id = standardise_user_id(user)
     if message.author.bot or str(message.author.id) == user_id or isinstance(message.channel, DMChannel):
@@ -80,6 +81,7 @@ def should_highlight(saved_highlights: Highlights, user, message: Message) -> bo
 
     if user_id in saved_highlights.highlights and message.content:
         content = " " + message.content + " "
-        if any(bool(re.search(highlight, content, re.IGNORECASE)) for highlight in saved_highlights.highlights[user_id]):
-            return True
-    return False
+        for highlight in saved_highlights.highlights[user_id]:
+            if bool(re.search(highlight, content, re.IGNORECASE)):
+                return highlight
+    return None

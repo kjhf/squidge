@@ -212,10 +212,10 @@ class WikiCommands(commands.Cog):
             await ctx.send(f"User {user} was not found.")
             return
 
-        # Sanity check for an established user (> 2 as registered users have '*' and 'user')
+        # Sanity check for an established user (> 3 as registered users have '*', 'user', and may have 'autoconfirmed')
         rights = user_to_nuke.groups()
         logging.info(f"Groups returned: {rights}")
-        if len(rights) > 2:
+        if len(rights) > 3:
             await ctx.send(
                 "Not nuking this user as they have established rights. If you really meant to do this, demote them first.")
             return
@@ -228,7 +228,7 @@ class WikiCommands(commands.Cog):
             one_day_ago = datetime.datetime.now() - datetime.timedelta(days=1)
             if first_edit_ts < one_day_ago:  # If the first edit was older than a day ago
                 await ctx.send(
-                    f"You don't have admin permission for this: {user_to_nuke.username}'s first contribution is more than a day old.")
+                    f"You don't have admin permission for this: {user_to_nuke.username}'s first contribution is more than a day old. Please ask a bot admin.")
                 return
 
             if user_to_nuke.username not in self.recent_vandals:
@@ -528,6 +528,8 @@ class WikiCommands(commands.Cog):
         for contrib in contributions:
             await asyncio.sleep(1)  # yield
             page: pywikibot.Page = contrib[0]
+            # TODO - check for page move and move back if needed
+            # page.move(previous_title, reason=EDIT_WITH_AUTHORIZED_BY + ctx.author.__str__() + " reverting page move by a [[Inkipedia:Policy/Vandalism|vandal]]")
             if page.exists():
                 page.revisions()  # load revisions
                 try:
@@ -661,7 +663,7 @@ class WikiCommands(commands.Cog):
 
             # If it's a duplicate
             given_reason_cf = given_reason.casefold()
-            if any(r in given_reason_cf for r in ("dupe file", "dupe", "duplicate")):
+            if any(r in given_reason_cf for r in ("dupe file", "dupe", "duplicate", "replaced with")):
                 dupe_target = self._get_dupe_file_target(page, given_reason)
                 if dupe_target:
                     if dupe_target.exists():
@@ -746,8 +748,9 @@ class WikiCommands(commands.Cog):
             modified_reason += " {{Delete/CannotAutoDelete}}"
             pass
         page.text = re.sub(DELETE_REASON_REGEX, r'{{delete|' + modified_reason + '}}', page.text)
+        summary = DEFAULT_EDIT + ": Cannot process auto-delete because " + reason if reason else DEFAULT_EDIT + ": Cannot process auto-delete."
         page.save(
-            summary=DEFAULT_EDIT + ": Cannot process auto-delete",
+            summary=summary,
             prompt=False)
 
     @staticmethod
