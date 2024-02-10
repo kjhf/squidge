@@ -586,6 +586,14 @@ class WikiCommands(commands.Cog):
         for page in chain(cat_page.articles(), cat_page.subcategories(recurse=True)):
             await asyncio.sleep(0.1)  # yield
 
+            # First check if the page is a redirect (or would have been but has {{delete}} now so is no longer)
+            target_page = self._get_redirect_target(page)
+            if target_page:
+                if await self._handle_redirect_auto_delete(page, target_page, broken_redirect_summary,
+                                                           double_redirect_summary, unused_redirect_summary):
+                    count = count + 1
+                continue
+
             if page.isTalkPage():
                 if await self._handle_talkpage_auto_delete(page, orphaned_summary):
                     count = count + 1
@@ -603,14 +611,6 @@ class WikiCommands(commands.Cog):
 
             if page.is_filepage():
                 if await self._handle_filepage_auto_delete(page, author_request_summary, duplicate_request_summary):
-                    count = count + 1
-                    continue  # only loop if deleted. Otherwise, let's try the redirect.
-
-            # If the page is a redirect (or would have been but has {{delete}} now so is no longer)
-            target_page = self._get_redirect_target(page)
-            if target_page:
-                if await self._handle_redirect_auto_delete(page, target_page, broken_redirect_summary,
-                                                           double_redirect_summary, unused_redirect_summary):
                     count = count + 1
                 continue
 
@@ -640,7 +640,7 @@ class WikiCommands(commands.Cog):
         else:
             # The target exists and is not a redirect... this page is probably superseded or unused redirect but should be checked by an admin.
             if self._is_in_use(page):
-                self._handle_not_deleting(page, "it is in use.")
+                self._handle_not_deleting(page, "redirect is in use. Please verify.")
             else:
                 return self._try_delete_page(page, unused_redirect_summary + " targeting " + (
                     target_page.title(as_link=True)))
@@ -735,12 +735,12 @@ class WikiCommands(commands.Cog):
         # if self._is_last_modified_by_squidge(page):  # TODO - this isn't working for some reason
         #     return
 
-        current_reason = self._get_given_delete_reason(page)
+        current_reason = self._get_given_delete_reason(page) or ""
+        modified_reason = current_reason or ""
 
         if 'CannotAutoDelete' in current_reason or '{{clarify' in current_reason:
             return
 
-        modified_reason = current_reason or ""
         if add_as_clarify:
             modified_reason += " {{clarify|" + reason + "}}"
         if add_as_cannot_auto:
