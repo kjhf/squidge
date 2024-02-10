@@ -60,7 +60,8 @@ def standardise_user_id(user: Union[User, str, int]) -> str:
 def toggle_highlight(saved_highlights: Highlights, user: int, phrase: str) -> Optional[str]:
     """Toggles the highlight for a given user. Returns the phrase if added, None if removed."""
     user_id = standardise_user_id(user)
-    phrase = phrase.casefold().replace(' ', '[\s\W\b]').replace('\\b', '[\s\W\b]')
+    # Note this is to save in the JSON, represent the space with a \\b
+    phrase = phrase.casefold().replace(' ', '\\b')
     if user_id in saved_highlights.highlights:
         if phrase in saved_highlights.highlights[user_id]:
             saved_highlights.highlights[user_id].remove(phrase)
@@ -81,7 +82,8 @@ def should_highlight(saved_highlights: Highlights, user, message: Message) -> Op
 
     if user_id in saved_highlights.highlights and message.content:
         content = " " + message.content + " "
-        for highlight in saved_highlights.highlights[user_id]:
+        for raw_highlight in saved_highlights.highlights[user_id]:
+            highlight = raw_highlight.replace("\\b", "[\\b\\s\\W]+").replace(" ", "[\\b\\s\\W]+")
             if bool(re.search(highlight, content, re.IGNORECASE)):
                 return highlight
     return None

@@ -271,7 +271,7 @@ class WikiCommands(commands.Cog):
 
                     # In each false trigger, if it's a whole word, remove it
                     # [\s\W\b] is there to match space/punctuation/end of the string
-                    for word in self.bad_words.false_triggers:
+                    for word in self.bad_words.false_triggers or []:
                         content = re.sub(r"[\s\W\b](" + word + r")[\s\W\b]", "", content, flags=re.I)
 
                     logging.info(f"handle_inkipedia_event: Querying {content}")
