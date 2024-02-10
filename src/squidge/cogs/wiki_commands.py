@@ -268,6 +268,8 @@ class WikiCommands(commands.Cog):
 
                     # Remove square brackets as they are primarily links, and also fool some detection (e.g. [ is a c)
                     content = content.replace("[", "").replace("]", "")
+                    if not content:
+                        return
 
                     # In each false trigger, if it's a whole word, remove it
                     # [\s\W\b] is there to match space/punctuation/end of the string
@@ -333,7 +335,8 @@ class WikiCommands(commands.Cog):
         if not phrase:
             await ctx.send(f'{COMMAND_SYMBOL}false <phrase>')
             return
-
+        
+        phrase = re.escape(phrase)
         set_list = set([w.lower() for w in self.bad_words.false_triggers])
 
         if phrase in set_list:
@@ -648,7 +651,7 @@ class WikiCommands(commands.Cog):
 
     async def _handle_filepage_auto_delete(self, page: Page, author_request_summary, duplicate_request_summary):
         if self._is_in_use(page):
-            self._handle_not_deleting(page, "it is in use.")
+            self._handle_not_deleting(page, "it is in use, please check [[Special:WhatLinksHere/" + page.title(underscore=True) + "]]")
             return False
 
         page.revisions()  # load revisions
@@ -690,7 +693,7 @@ class WikiCommands(commands.Cog):
 
     async def _handle_userpage_auto_delete(self, page, author_request_summary):
         if self._is_in_use(page):
-            self._handle_not_deleting(page, "it is in use.")
+            self._handle_not_deleting(page, "it is in use, please check [[Special:WhatLinksHere/" + page.title(underscore=True) + "]]")
             return False
 
         try:
