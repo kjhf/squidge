@@ -13,7 +13,7 @@ from discord import TextChannel, Message, Interaction
 from discord.ext import commands
 from discord.ext.commands import Context, Bot
 # noinspection PyProtectedMember
-from pywikibot import Site, Page, pagegenerators, APISite, Category  # APISite used for type hinting
+from pywikibot import Site, Page, pagegenerators, Category
 from pywikibot.data import api
 from pywikibot.page import Revision
 from pywikibot.site._namespace import BuiltinNamespace
@@ -52,7 +52,7 @@ class WikiCommands(commands.Cog):
         pywikibot.config.colorized_output = True
         pywikibot.config.interwiki_shownew = True
 
-        self.sites: dict[str, APISite] = {}
+        self.sites: dict[str, Site] = {}
 
         # Find the password file and family file
         file = ".pwd"
@@ -69,8 +69,6 @@ class WikiCommands(commands.Cog):
         for i in range(0, 10):
             if os.path.exists(file):
                 pywikibot.config.family_files['splatoonwiki'] = file
-                # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
-                # noinspection PyTypeChecker
                 self.sites['en'] = Site(code='en', fam='splatoonwiki')
                 # noinspection PyTypeChecker
                 self.sites['fr'] = Site(code='fr', fam='splatoonwiki')
@@ -81,8 +79,6 @@ class WikiCommands(commands.Cog):
                 file = "../" + file
         else:
             logging.critical("***Family file not found. Interwiki commands will not work.***")
-            # Disable the PyTypeChecker here as an APISite is returned from the Site interface.
-            # noinspection PyTypeChecker
             self.sites['en'] = Site(fam='splatoonwiki', url="https://splatoonwiki.org")
 
         pywikibot.config.put_throttle = 1  # i.e. 1 operation per second throttle
