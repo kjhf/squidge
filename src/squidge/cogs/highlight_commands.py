@@ -83,7 +83,18 @@ def should_highlight(saved_highlights: Highlights, user, message: Message) -> Op
     if user_id in saved_highlights.highlights and message.content:
         content = " " + message.content + " "
         for raw_highlight in saved_highlights.highlights[user_id]:
-            highlight = raw_highlight.replace("\\b", "[\\b\\s\\W]+").replace(" ", "[\\b\\s\\W]+")
+            highlight = _raw_highlight_to_regex_highlight(raw_highlight)
             if bool(re.search(highlight, content, re.IGNORECASE)):
-                return highlight
+                return _highlight_to_display(highlight)
     return None
+
+
+def _raw_highlight_to_regex_highlight(raw: str):
+    """Return a raw highlight as its Regex form. Fixes a weakness in Python where boundaries aren't what you expect"""
+    return raw.replace("\\b", "[\\b\\s\\W]+").replace(" ", "[\\b\\s\\W]+")
+
+
+def _highlight_to_display(highlight: str):
+    """Return a highlight as a display form"""
+    return highlight.replace("[\\b\\s\\W]+", " ").replace("\\b", " ")
+
