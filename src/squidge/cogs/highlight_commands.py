@@ -29,7 +29,7 @@ class HighlightCommands(commands.Cog):
         if added:
             no_space_warning = "" if '\\b' in phrase else \
                 "Note: your phrase doesn't have \\b in it, so might match inside words. Discord trims spaces from messages! " \
-                "Use \\b for boundary if you don't want to match inside words. I will convert \\b into `[\s\W\b]`."
+                "Use \\b for boundary if you don't want to match inside words. I will convert \\b into `[\\s\\W\b]`."
             await ctx.send(f"You are now watching `{added}`. {no_space_warning}")
         else:
             await ctx.send(f"You are no longer watching `{phrase}`.")
@@ -78,7 +78,7 @@ def should_highlight(saved_highlights: Highlights, user, message: Message) -> Op
     """Get if the message should be highlighted for the user"""
     user_id = standardise_user_id(user)
     if message.author.bot or str(message.author.id) == user_id or isinstance(message.channel, DMChannel):
-        return False
+        return None
 
     if user_id in saved_highlights.highlights and message.content:
         content = " " + message.content + " "
