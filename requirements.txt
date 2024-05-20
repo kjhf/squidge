@@ -1,6 +1,6 @@
-requests>=2.25.1
+requests>=2.31.0
 python-dotenv>=0.17.1
-Pywikibot>=7.7.1
+Pywikibot~=7.7.1
 mwparserfromhell>=0.6.4
-discord>=2.0.0
-setuptools>=65.1.0
+discord>=2.3.2
+setuptools>=65.5.1
