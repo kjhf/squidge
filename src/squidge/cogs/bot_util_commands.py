@@ -1,19 +1,25 @@
 """Bot Utility commands cog."""
 import os
 import random
+from collections import deque
+from time import time
+from typing import Deque
 
 from discord.ext import commands
 from discord.ext.commands import Context
 
 from src.squidge.entry.consts import COMMAND_SYMBOL
-from src.squidge.savedata.topics import TOPICS
+from src.squidge.savedata.topics import TOPICS, TOPICS_FR, THROTTLE_TOPICS
 
 
 class BotUtilCommands(commands.Cog):
     """A grouping of bot utility commands."""
+    topic_limiter: Deque[float]
+    LIMIT = 180  # 3 mins
 
     def __init__(self, bot):
         self.bot = bot
+        self.topic_limiter = deque(maxlen=3)
         super().__init__()
 
     @commands.command(
@@ -46,4 +52,35 @@ class BotUtilCommands(commands.Cog):
         pass_ctx=True)
     async def topic(self, ctx: Context):
         topic_to_discuss = random.choice(TOPICS)
-        await ctx.send(f"You should discuss... `{topic_to_discuss}` ...Go!")
+        if self._within_limit():
+            await ctx.send(f"You should discuss... `{topic_to_discuss}` ...Go!")
+        else:
+            await ctx.send(THROTTLE_TOPICS)
+
+    @commands.command(
+        name='Sujet de discussion aléatoire',
+        description="Vous donne un sujet de discussion aléatoire.",
+        brief="Gives you a random topic to discuss.",
+        aliases=['sujet', 'topic_fr'],
+        help=f'{COMMAND_SYMBOL}sujet',
+        pass_ctx=True)
+    async def sujet(self, ctx: Context):
+        topic_to_discuss = random.choice(TOPICS_FR)
+        await ctx.send(f"Vous devriez discuter... `{topic_to_discuss}` ...C'est parti !")
+
+    def _within_limit(self) -> bool:
+        """Check if rate limit has been exceeded."""
+        now = time()
+
+        # Remove calls older than time window
+        while self.topic_limiter and now - self.topic_limiter[0] > self.LIMIT:
+            self.topic_limiter.popleft()
+
+        # Check if we've hit the limit (3 calls within LIMIT)
+        if len(self.topic_limiter) >= 3:
+            oldest_call = self.topic_limiter[0]
+            if now - oldest_call <= self.LIMIT:
+                return False
+
+        self.topic_limiter.append(now)
+        return True
