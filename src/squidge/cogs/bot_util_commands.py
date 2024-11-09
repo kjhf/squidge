@@ -51,11 +51,12 @@ class BotUtilCommands(commands.Cog):
         help=f'{COMMAND_SYMBOL}topic',
         pass_ctx=True)
     async def topic(self, ctx: Context):
-        topic_to_discuss = random.choice(TOPICS)
         if self._within_limit():
+            topic_to_discuss = random.choice(TOPICS)
             await ctx.send(f"You should discuss... `{topic_to_discuss}` ...Go!")
         else:
-            await ctx.send(THROTTLE_TOPICS)
+            topic_to_discuss = random.choice(THROTTLE_TOPICS)
+            await ctx.send(topic_to_discuss)
 
     @commands.command(
         name='Sujet de discussion aléatoire',
