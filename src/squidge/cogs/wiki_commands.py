@@ -363,7 +363,6 @@ class WikiCommands(commands.Cog):
             await ctx.send(f'{COMMAND_SYMBOL}whitelist <word>')
             return
 
-        channel: TextChannel = self.bot.get_channel(int(os.getenv("WIKI_PERMISSIONS_CHANNEL")))
         set_list = set([w.lower() for w in self.bad_words.whitelist])
 
         if word in set_list:
@@ -852,8 +851,8 @@ class WikiCommands(commands.Cog):
 
     @commands.command(
         name='delete_list',
-        description="Deletes from a supplied list.",
-        brief="Deletes from a supplied list.",
+        description="Deletes files on wiki from an attached text file.",
+        brief="Mass delete from list.",
         aliases=['dellist', 'deletioning'],
         help=f'{COMMAND_SYMBOL}delete_list (args)',
         pass_ctx=True)
@@ -862,9 +861,9 @@ class WikiCommands(commands.Cog):
             self.login_to_sites()
             try:
                 # If there is an attachment, read it
-                if str(ctx.message.attachments) == "[]":  # Checks if there is an attachment on the message
+                if not ctx.message.attachments or str(ctx.message.attachments) == "[]":
                     await ctx.send(
-                        "You need to send a text file with the message. Please upload and send a new message.")
+                        "Please resend this command with an attached txt/csv file.")
                     return
 
                 attachments = ctx.message.attachments
@@ -875,6 +874,10 @@ class WikiCommands(commands.Cog):
                     file_contents = file_bytes.decode("utf-8").splitlines()  # Decode the bytes as a string[]
                     edit_summary_pre = EDIT_WITH_AUTHORIZED_BY + str(ctx.author) + " "
                     result = "Deleted: \n"
+                    if not file_contents:
+                        await ctx.send(f"Nothing in, or could not read, the file. {file_bytes=} {file_contents=}.")
+                        return
+
                     for line in file_contents:
                         if line:
                             # If the line contains a comma, it's the 'Replaced X with Y format'.
@@ -895,9 +898,12 @@ class WikiCommands(commands.Cog):
                             else:
                                 result += "*FAILED* " + line + "\n"
                     await ctx.send(result[:MESSAGE_TEXT_LIMIT])
-
+                else:
+                    await ctx.send(f"Expecting csv or txt attachment, actually {repr(attachments)} -> {split_v1} -> {filename}")
             except Exception as ex:
                 await ctx.send(f"There was a problem: {ex.args}")
+        else:
+            logging.warning(f"Ignoring {ctx.author}'s request for deletion as they aren't a registered admin. -> {ctx.message.jump_url}")
 
     @commands.command(
         name='iotm',

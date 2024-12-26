@@ -13,6 +13,7 @@ from discord.ext.commands import Bot, CommandNotFound, UserInputError, MissingRe
 from src.squidge.cogs.bot_util_commands import BotUtilCommands
 from src.squidge.cogs.server_commands import ServerCommands
 from src.squidge.cogs.wiki_commands import WikiCommands
+from src.squidge.discordsupport.channel_logger import ChannelLogHandler
 from src.squidge.entry.consts import COMMAND_SYMBOL
 from src.squidge.savedata.save_data import SaveData
 
@@ -25,6 +26,7 @@ class SquidgeBot(Bot):
         self.wiki_commands = None
         self.highlight_commands = None
         self.presence = ""
+
         intents = discord.Intents.default()
         intents.members = True  # Needed to call fetch_members for username & tag recognition (grant/deny)
         intents.message_content = True
@@ -49,6 +51,11 @@ class SquidgeBot(Bot):
             self.presence = "in the cloud ⛅ (use " + COMMAND_SYMBOL + ")"
         if 'pydevd' in sys.modules or 'pdb' in sys.modules or '_pydev_bundle.pydev_log' in sys.modules:
             self.presence += ' (Debug Attached)'
+
+        # Try connecting to the logs channel
+        logs_channel = self.load_channel_from_env("ERRORS_LOG_CHANNEL", True)
+        if logs_channel:
+            ChannelLogHandler(logs_channel, None, logging.WARNING)
 
         # Load Cogs
         await self.try_add_cog(BotUtilCommands)
@@ -130,16 +137,10 @@ class SquidgeBot(Bot):
         )
 
     async def load_save_data(self):
-        perms_channel_str = os.getenv("WIKI_PERMISSIONS_CHANNEL")
-        if not perms_channel_str:
-            raise RuntimeError(f"WIKI_PERMISSIONS_CHANNEL not found in the env vars.")
-
-        channel: TextChannel = self.get_channel(int(perms_channel_str))
-        if not channel:
-            raise RuntimeError(f"WIKI_PERMISSIONS_CHANNEL {perms_channel_str} not found.")
+        wiki_perms_channel = self.load_channel_from_env("WIKI_PERMISSIONS_CHANNEL", False)
 
         try:
-            last_message: Optional[Message] = await channel.fetch_message(channel.last_message_id)
+            last_message: Optional[Message] = await wiki_perms_channel.fetch_message(wiki_perms_channel.last_message_id)
         except discord.NotFound:
             last_message = None
         if last_message:
@@ -148,9 +149,28 @@ class SquidgeBot(Bot):
             author: Optional[User] = last_message.author
             if author.id != self.user.id:
                 # Repost the message so we can edit.
-                await channel.send(json.dumps(permissions_json))
+                await wiki_perms_channel.send(json.dumps(permissions_json))
                 logging.info("Permissions loaded and resent!")
             else:
                 logging.info("Permissions loaded!")
         else:
-            raise RuntimeError("WIKI_PERMISSIONS_CHANNEL has no previous message or I cannot read it.")
+            raise RuntimeError("Wiki perms channel has no previous message or I cannot read it.")
+
+
+    def load_channel_from_env(self, env_key: str, optional: bool) -> Optional[TextChannel]:
+        perms_channel_str = os.getenv(env_key)
+        if not perms_channel_str:
+            if optional:
+                logging.info(f"{env_key} not found. Continuing.")
+                return None
+            else:
+                raise RuntimeError(f"{env_key} not found in the env vars.")
+
+        channel: TextChannel = self.get_channel(int(perms_channel_str))
+        if not channel:
+            if optional:
+                logging.error(f"{env_key} was specified as {perms_channel_str} but was not found/accessible. Continuing anyway.")
+                return None
+            else:
+                raise RuntimeError(f"{env_key} {perms_channel_str} not found/accessible.")
+        return channel

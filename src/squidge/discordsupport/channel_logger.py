@@ -9,13 +9,13 @@ MESSAGE_TEXT_LIMIT = 2000
 
 
 class ChannelLogHandler(StreamHandler):
-    def __init__(self, channel: Messageable, logger: Optional[logging.Logger]):
+    def __init__(self, channel: Messageable, logger: Optional[logging.Logger], log_level: int | str = logging.INFO):
         StreamHandler.__init__(self)
         if channel:
             self.log_channel = channel
             logger = logger or logging.getLogger()
-            logger.setLevel(logging.INFO)
-            self.setLevel(logging.INFO)
+            logger.setLevel(log_level)
+            self.setLevel(log_level)
             formatter = logging.Formatter('[%(levelname)s]: %(message)s')
             self.setFormatter(formatter)
             logger.addHandler(self)
