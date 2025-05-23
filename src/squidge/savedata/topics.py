@@ -276,7 +276,6 @@ TOPICS = (
 "hotel california",
 "what does home mean to you?",
 "how",
-"hatchets, axes, knives, swords, and other sharp things",
 "heads",
 "hyenas",
 "something hefty",
